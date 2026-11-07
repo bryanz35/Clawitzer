@@ -97,9 +97,9 @@ export class OperatorLink {
       if (msg) this.onControl(msg);
     };
     const video = pc.addTransceiver("video", { direction: "recvonly" });
-    // Prefer H.265, then H.264 (hardware on both ends). The answer picks the first codec both sides support,
-    // so a missing H.265 on either end falls back to H.264, then the rest in the browser's order.
-    const preferred = ["video/H265", "video/H264"];
+    // Prefer H.264 (hardware on both ends). The answer picks the first codec both sides support; the rest follow
+    // in the browser's order. Not H.265: the Quest negotiates it but its frames render half white/half black in the XR texture.
+    const preferred = ["video/H264"];
     const rank = (c: RTCRtpCodec) => {
       const i = preferred.indexOf(c.mimeType);
       return i < 0 ? preferred.length : i;
