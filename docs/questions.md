@@ -177,6 +177,6 @@ Landscape, camera facing downward at a slight angle(~10 degrees) pointing in the
 Lens position: 0 mm from pan
 Tilt not possible
 
-## 11. Optional (nice to have for the in-VR digital twin)
+## 11. Optional (no longer needed: the in-VR 3D arm copy was dropped)
 
 - [ ] Rough outer size of each link as a box or cylinder (mm). STL export is fine too.

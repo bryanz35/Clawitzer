@@ -3,8 +3,13 @@
 package com.armmirror.robot
 
 import android.app.Application
+import android.hardware.display.DisplayManager
+import android.os.SystemClock
+import android.view.Display
+import android.view.Surface
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import com.armmirror.robot.arm.ArmLink
@@ -20,10 +25,12 @@ import com.armmirror.robot.protocol.statusJson
 import com.armmirror.robot.rtc.CameraInfo
 import com.armmirror.robot.rtc.RobotPeer
 import com.armmirror.robot.rtc.pickWideCamera
+import com.armmirror.robot.sensors.screenRollDeg
 import com.armmirror.robot.sensors.startOrientation
 import org.webrtc.VideoSink
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.util.Locale
 
 class RobotApplication : Application() {
     lateinit var robot: RobotApp
@@ -40,9 +47,12 @@ class RobotApp(private val ctx: Application) {
     val link = mutableStateOf("waiting for operator")
     val arm = mutableStateOf(ArmLinkState.DISCONNECTED)
     val mock = mutableStateOf(false)
-    val camera = mutableStateOf("off")
+    val camera = mutableStateOf<CameraInfo?>(null)
     val orient = mutableStateOf("off")
-    val mcu = mutableStateOf("")
+    /** Latest MCU status line; null unless the arm link is READY. */
+    val status = mutableStateOf<Status?>(null)
+    /** Screen roll about its normal, degrees, clockwise positive. */
+    val roll = mutableFloatStateOf(0f)
     val cameras = mutableStateOf(emptyList<CameraInfo>())
     val log = mutableStateListOf<String>()
     val operatorUrls: List<String> = lanAddresses().map { "http://$it:$HUB_PORT/operator/" }
@@ -70,7 +80,10 @@ class RobotApp(private val ctx: Application) {
     private var stopOrientation: (() -> Unit)? = null
 
     init {
-        peer.onState = { s -> ui { link.value = s } }
+        peer.onState = { s ->
+            log("link: $s")
+            ui { link.value = s }
+        }
         peer.onLog = ::log
         peer.onChannelOpen = relay::reset
         peer.onJoints = relay::onJoints
@@ -79,15 +92,33 @@ class RobotApp(private val ctx: Application) {
     }
 
     private fun wire(a: ArmLink) {
-        a.onState = { s -> ui { arm.value = s } }
+        a.onState = { s ->
+            ui {
+                if (arm.value != s) log("arm: ${s.name.lowercase()}")
+                arm.value = s
+                if (s != ArmLinkState.READY) status.value = null
+            }
+        }
         a.onLog = ::log
+        var lastMode = ""
+        var lastLogMs = 0L
         a.onStatus = { s: Status ->
             peer.send(statusJson(s))
-            ui { mcu.value = "mcu: ${s.state} seq=${s.seq} [${s.deg.joinToString(" ") { "%.1f".format(it) }}]" }
+            // 10 Hz is too fast to read: log mode changes and one line a second.
+            val now = SystemClock.elapsedRealtime()
+            if (s.state != lastMode || now - lastLogMs >= 1000) {
+                lastMode = s.state
+                lastLogMs = now
+                log("mcu: ${s.state} seq=${s.seq} [${s.deg.joinToString(" ") { "%.1f".format(Locale.ROOT, it) }}]")
+            }
+            ui { if (arm.value == ArmLinkState.READY) status.value = s }
         }
     }
 
     fun connectArm() = armLink.connect()
+
+    /** Reset button: drop the link; Connect arm re-handshakes. */
+    fun resetArm() = armLink.close()
 
     /** Swaps between the USB link and the mock MCU (the old ?mockSerial=1). */
     fun setMock(on: Boolean) {
@@ -104,9 +135,17 @@ class RobotApp(private val ctx: Application) {
         cameras.value = cams
         pickWideCamera(cams)?.let { useCamera(it, preview) } ?: log("camera: no camera found")
         if (stopOrientation == null) {
+            val display = ctx.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
             stopOrientation = startOrientation(ctx) { q ->
                 peer.send(camOrientJson(q, System.currentTimeMillis()))
-                if (orient.value != "live") ui { orient.value = "live" }
+                val r = screenRollDeg(q, display?.rotation ?: Surface.ROTATION_90)
+                ui {
+                    roll.floatValue = r
+                    if (orient.value != "live") {
+                        orient.value = "live"
+                        log("orientation: rotation vector live")
+                    }
+                }
             }
             if (stopOrientation == null) orient.value = "rotation vector sensor missing"
         }
@@ -114,7 +153,11 @@ class RobotApp(private val ctx: Application) {
 
     fun useCamera(cam: CameraInfo, preview: VideoSink) {
         runCatching { peer.useCamera(cam, preview) }
-            .onSuccess { camera.value = cam.label }
+            .onSuccess {
+                camera.value = cam
+                val widest = cam.back && pickWideCamera(cameras.value)?.id == cam.id
+                log("camera: ${if (cam.back) "back" else "front"}${if (widest) " · ultrawide (shortest focal length)" else ""} · ${cam.label}")
+            }
             .onFailure { log("camera: ${it.message}") }
     }
 

@@ -31,7 +31,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 | Path | What | Key tech |
 |---|---|---|
-| `apps/operator` | Quest WebXR page. **IK runs here.** | Vite, TypeScript, Three.js, raw WebXR hand (`hand-tracking`) + body (`body-tracking`, `XRFrame.body`) APIs, urdf-loader, closed-chain-ik |
+| `apps/operator` | Quest WebXR page. **IK runs here.** | Vite, TypeScript, Three.js, raw WebXR hand (`hand-tracking`) + body (`body-tracking`, `XRFrame.body`) APIs, closed-chain-ik |
 | `apps/robot-android` | Native phone app (Gradle, not an npm workspace). Embedded server, WebRTC answerer, USB serial, orientation | Kotlin, Jetpack Compose, Ktor (CIO + websockets), stream-webrtc-android (libwebrtc), usb-serial-for-android, `SensorManager` rotation vector |
 | `packages/protocol` | ALL message types + serial encode/decode + CRC | TS, shared by every app |
 | `packages/kinematics` | URDF loading, IK wrapper, limit clamping | TS + vitest |
@@ -47,7 +47,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 2. **Plain HTTP.** The Quest uses the `chrome://flags/#unsafely-treat-insecure-origin-as-secure` dev flag for the operator origin. Do not add HTTPS, certificate or mkcert tooling.
 3. **The phone side is a native Android app** (Kotlin + Compose). It embeds the HTTP + signaling server on :8080, so there is no Termux and no phone web page. Camera, USB and sensors use native APIs, so no secure context is needed.
 4. **No Bluetooth path to the Quest.** Web Bluetooth is not usable in Quest Browser, so the IMU wearable talks to the Quest over `ws://`.
-5. **Three.js only.** No Babylon.js, no IWSDK. The robotics libraries (urdf-loader, closed-chain-ik) are built on Three.js.
+5. **Three.js only.** No Babylon.js, no IWSDK. The IK library (closed-chain-ik) is built on Three.js.
 6. **IK uses closed-chain-ik `Solver` on the main thread.**
    - Never use `WorkerSolver`: it needs SharedArrayBuffer, which isn't available in Chromium on Android.
    - The 5-DOF arm can't match a full 6-DOF hand pose. The goal constrains position + 2 orientation DOF.
@@ -144,7 +144,7 @@ pio device monitor -d firmware/arm-controller
 
 ## How Claude should work here
 
-- **Hardware access.** Claude cannot touch the hardware. Verify with unit tests, typecheck, IWER, the in-VR digital twin and the serial test CLI. Always state what was NOT tested on real hardware.
+- **Hardware access.** Claude cannot touch the hardware. Verify with unit tests, typecheck, IWER, the in-VR HUD and the serial test CLI. Always state what was NOT tested on real hardware.
 - **Stop and ask** before changing anything under "Key decisions" or "Safety invariants", or before editing `hardware/urdf/arm.urdf` joint limits.
 - **Open items.** If a task depends on one of these (joint list/limits/link lengths, sacrificed IK axis, gripper, servo models, phone model), use a clearly marked `TODO(open-item)` placeholder and say so.
 
@@ -152,6 +152,6 @@ pio device monitor -d firmware/arm-controller
 
 1. Arm firmware: serial parser, limits, watchdog, e-stop handling. Tested from a laptop with the serial test CLI.
 2. The phone app serves the operator page; the Quest connects; head pose drives the pan/tilt stand.
-3. Quest hand tracking → IK → arm, with the deadman gesture and the digital twin.
+3. Quest hand tracking → IK → arm, with the deadman gesture. No in-VR 3D arm copy (dropped 2026-11-07); the HUD shows commanded and reported state.
 4. Video stream with wide-FOV crop.
 5. Stretch goals: IMU fallback, IOBT elbow fusion, polish.
