@@ -40,8 +40,12 @@ class UsbArmLink(private val ctx: Context) : ArmLink {
             ctx,
             object : BroadcastReceiver() {
                 override fun onReceive(c: Context, i: Intent) {
-                    if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) connect()
-                    else onLog("usb: permission denied")
+                    if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        onLog("usb: permission granted")
+                        connect()
+                    } else {
+                        onLog("usb: permission denied")
+                    }
                 }
             },
             IntentFilter(ACTION_USB_PERMISSION),

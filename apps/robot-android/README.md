@@ -21,10 +21,10 @@ cd apps/robot-android
 
 ## Use
 
-1. Open the app. The log shows the operator URL for each network interface.
-2. Tap **Start camera + sensors**. It grants the camera permission and picks the back camera with the shortest focal length. Other cameras appear as buttons.
-3. Plug in the ESP32-S3 (OTG). Accept "open Clawitzer", or tap **Connect arm**. The arm state goes `handshaking` → `ready` on the first status line.
-4. **Mock MCU** replaces USB with a fake MCU: IDLE, then ACTIVE while commands arrive, WATCHDOG after 200 ms of silence. Encoded `J` lines go to the log.
+1. Open the app. It asks for the camera permission, then the back camera with the shortest focal length fills the screen. The sheet on the right (**Status · Joints · Log**) shows the operator URL for each network interface under **Status ▸ Operator**; × folds it into a pill.
+2. Other cameras appear as lens buttons in the **Status** tab.
+3. Plug in the board (OTG). Accept "open Clawitzer", or tap **Connect arm**. The arm state goes `Handshaking` → `Ready` on the first status line; **Reset** drops the link.
+4. **Mock MCU** (bottom of **Status**) replaces USB with a fake MCU: IDLE, then ACTIVE while commands arrive, WATCHDOG after 200 ms of silence. Encoded `J` lines go to the **Log** tab.
 5. On the Quest, set the dev flag `unsafely-treat-insecure-origin-as-secure` to `http://<phone-ip>:8080`, restart the browser, then open `http://<phone-ip>:8080/operator/`.
 
 Keep the app in the foreground; the screen stays on.
@@ -36,7 +36,7 @@ Developing the operator on the laptop against the phone: `npm run dev:operator`,
 ```
 npm run android
 adb forward tcp:8080 tcp:8080
-# in the app: Start camera + sensors, Mock MCU on
+# in the app: allow the camera, Status ▸ Mock MCU on
 node apps/robot-android/tools/smoke.mjs
 ```
 
