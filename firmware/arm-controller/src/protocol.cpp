@@ -101,6 +101,40 @@ ParseResult parseCommand(const char* line, size_t len, JointCommand& out) {
   return ParseResult::Ok;
 }
 
+ParseResult parseCameraCommand(const char* line, size_t len, CameraCommand& out) {
+  if (len > 0 && line[len - 1] == '\r') len--;
+  if (len < 4 || line[0] != 'P' || line[len - 3] != '*') return ParseResult::Malformed;
+  const int hi = hexValue(line[len - 2]);
+  const int lo = hexValue(line[len - 1]);
+  if (hi < 0 || lo < 0) return ParseResult::Malformed;
+  const char* payload = line + 1;
+  const char* end = line + len - 3;
+  const uint8_t expected = static_cast<uint8_t>((hi << 4) | lo);
+  if (crc8(reinterpret_cast<const uint8_t*>(payload), static_cast<size_t>(end - payload)) != expected) {
+    return ParseResult::BadCrc;
+  }
+  CameraCommand cmd{};
+  const char* p = payload;
+  if (p >= end || *p++ != ',') return ParseResult::Malformed;
+  if (!parseSeq(p, end, cmd.seq)) return ParseResult::Malformed;
+  if (p >= end || *p++ != ',') return ParseResult::Malformed;
+  if (!parseDeg(p, end, cmd.deg)) return ParseResult::Malformed;
+  if (p != end || cmd.deg < kCameraMinDeg || cmd.deg > kCameraMaxDeg) return ParseResult::Malformed;
+  out = cmd;
+  return ParseResult::Ok;
+}
+
+size_t formatCameraStatus(char* buf, size_t cap, uint16_t seq, float deg, bool active) {
+  char payload[kMaxLineLen];
+  const int n = snprintf(payload, sizeof payload, ",%u,%.1f,%u", static_cast<unsigned>(seq),
+                         static_cast<double>(deg), active ? 1u : 0u);
+  if (n <= 0 || static_cast<size_t>(n) >= sizeof payload) return 0;
+  const uint8_t crc = crc8(reinterpret_cast<const uint8_t*>(payload), static_cast<size_t>(n));
+  const int total = snprintf(buf, cap, "V%s*%02X\n", payload, crc);
+  if (total <= 0 || static_cast<size_t>(total) >= cap) return 0;
+  return static_cast<size_t>(total);
+}
+
 size_t formatStatus(char* buf, size_t cap, uint16_t seq, const char* state, const float deg[ARM_NUM_JOINTS]) {
   // Payload first (it is what the CRC covers), then the framing.
   char payload[kMaxLineLen];

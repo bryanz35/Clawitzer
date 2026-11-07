@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   crc8,
+  encodeCameraCommand,
+  encodeCameraStatus,
   encodeJoints,
   encodeStatus,
   isJointsMsg,
   nextSeq,
+  parseCameraCommand,
+  parseCameraStatus,
   parseJoints,
   parseStatus,
   seqIsNewer,
@@ -79,6 +83,27 @@ describe("status lines", () => {
     const line = encodeStatus({ seq: 3, state: "IDLE", deg: [0, 0, 0, 0, 0] });
     expect(parseStatus(line.replace(/\*[0-9A-F]{2}/, "*FF"))).toBeNull();
     expect(parseStatus("S,3,BOGUS,0.0,0.0,0.0,0.0,0.0*" + crc8(",3,BOGUS,0.0,0.0,0.0,0.0,0.0").toString(16) + "\n")).toBeNull();
+  });
+});
+
+describe("camera camera-servo lines", () => {
+  it("round-trips the independent 0–180° command and status", () => {
+    expect(parseCameraCommand(encodeCameraCommand(9, 0))).toEqual({ seq: 9, deg: 0 });
+    expect(parseCameraCommand(encodeCameraCommand(9, 180))).toEqual({ seq: 9, deg: 180 });
+    const status = { seq: 9, deg: 123.4, active: true } as const;
+    expect(parseCameraStatus(encodeCameraStatus(status))).toEqual(status);
+    expect(parseCameraStatus(encodeCameraStatus({ seq: 2, deg: 90, active: false }))).toEqual({ seq: 2, deg: 90, active: false });
+  });
+
+  it("rejects out-of-range, malformed and corrupted camera lines", () => {
+    expect(() => encodeCameraCommand(1, -1)).toThrow();
+    expect(() => encodeCameraCommand(1, 181)).toThrow();
+    expect(() => encodeCameraCommand(1, NaN)).toThrow();
+    const line = encodeCameraCommand(1, 90);
+    expect(parseCameraCommand(line.replace("90.0", "181.0"))).toBeNull();
+    expect(parseCameraCommand(line.replace(/\*[0-9A-F]{2}/, "*00"))).toBeNull();
+    expect(parseCameraStatus("V,1,90.0,2*" + crc8(",1,90.0,2").toString(16) + "\n")).toBeNull();
+    expect(parseCameraStatus("P,1,90.0,1*00\n")).toBeNull();
   });
 });
 

@@ -1,9 +1,11 @@
-import { NUM_JOINTS, SEQ_MODULUS } from "./constants";
+import { CAMERA_MAX_DEG, CAMERA_MIN_DEG, NUM_JOINTS, SEQ_MODULUS } from "./constants";
 import { isArmState, type JointDeg, type StatusMsg } from "./messages";
 
 // Line formats (ASCII, '\n' terminated, 115200 baud):
 //   command  J,<seq>,<j1>,…,<j5>*<crc8>
 //   status   S,<seq>,<state>,<j1>,…,<j5>*<crc8>
+//   camera   P,<seq>,<deg>*<crc8>          (0–180°, independent of arm joints)
+//   camera   V,<seq>,<deg>,<active>*<crc8> (status, active 0/1)
 // Angles are degrees with 1 decimal. crc8 covers the bytes strictly between the leading
 // letter and '*', written as 2 uppercase hex digits. Firmware mirror: firmware/arm-controller/src/protocol.cpp.
 
@@ -11,6 +13,16 @@ import { isArmState, type JointDeg, type StatusMsg } from "./messages";
 export interface JointsLine {
   seq: number;
   deg: JointDeg;
+}
+
+/** Independent camera servo command/status angle and sequence. */
+export interface CameraLine {
+  seq: number;
+  deg: number;
+}
+
+export interface CameraStatusMsg extends CameraLine {
+  active: boolean;
 }
 
 /** CRC-8, polynomial 0x07, init 0x00, no reflection, no final XOR. Check value: crc8("123456789") === 0xF4. */
@@ -68,6 +80,13 @@ function formatDeg(deg: readonly number[]): string {
   return deg.map((d) => (Math.abs(d) < 0.05 ? "0.0" : d.toFixed(1))).join(",");
 }
 
+function formatCameraDeg(deg: number): string {
+  if (!Number.isFinite(deg) || deg < CAMERA_MIN_DEG || deg > CAMERA_MAX_DEG) {
+    throw new RangeError(`camera angle must be finite in [${CAMERA_MIN_DEG}, ${CAMERA_MAX_DEG}], got ${deg}`);
+  }
+  return (Math.abs(deg) < 0.05 ? 0 : deg).toFixed(1);
+}
+
 function frame(letter: string, payload: string): string {
   return `${letter}${payload}*${hex2(crc8(payload))}\n`;
 }
@@ -82,6 +101,19 @@ export function encodeJoints(seq: number, deg: readonly number[]): string {
 export function encodeStatus(status: Omit<StatusMsg, "t">): string {
   assertSeq(status.seq);
   return frame("S", `,${status.seq},${status.state},${formatDeg(status.deg)}`);
+}
+
+/** Encodes the independent camera servo command. The firmware enforces the same range. */
+export function encodeCameraCommand(seq: number, deg: number): string {
+  assertSeq(seq);
+  return frame("P", `,${seq},${formatCameraDeg(deg)}`);
+}
+
+/** Encodes a camera status line. Used by mocks and tests; the real sender is the firmware. */
+export function encodeCameraStatus(status: CameraStatusMsg): string {
+  assertSeq(status.seq);
+  if (typeof status.active !== "boolean") throw new TypeError("camera active must be boolean");
+  return frame("V", `,${status.seq},${formatCameraDeg(status.deg)},${status.active ? 1 : 0}`);
 }
 
 /** Splits `<L><payload>*<crc>` and verifies the CRC. Returns the comma-split payload fields (after the letter). */
@@ -120,6 +152,12 @@ function parseDegFields(fields: string[]): JointDeg | null {
   return out as JointDeg;
 }
 
+function parseCameraDeg(s: string): number | null {
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+  const deg = Number(s);
+  return Number.isFinite(deg) && deg >= CAMERA_MIN_DEG && deg <= CAMERA_MAX_DEG ? deg : null;
+}
+
 /** Parses a `J` line. Returns null on bad CRC or a malformed line. */
 export function parseJoints(line: string): JointsLine | null {
   const f = unframe(line, "J");
@@ -127,6 +165,25 @@ export function parseJoints(line: string): JointsLine | null {
   const seq = parseSeqField(f[0]);
   const deg = parseDegFields(f.slice(1));
   return seq === null || deg === null ? null : { seq, deg };
+}
+
+/** Parses a `P` camera command. Returns null on bad CRC, malformed data or out-of-range angle. */
+export function parseCameraCommand(line: string): CameraLine | null {
+  const f = unframe(line, "P");
+  if (!f || f.length !== 2) return null;
+  const seq = parseSeqField(f[0]);
+  const deg = parseCameraDeg(f[1]);
+  return seq === null || deg === null ? null : { seq, deg };
+}
+
+/** Parses a `V` camera status line. Returns null on bad CRC or malformed data. */
+export function parseCameraStatus(line: string): CameraStatusMsg | null {
+  const f = unframe(line, "V");
+  if (!f || f.length !== 3) return null;
+  const seq = parseSeqField(f[0]);
+  const deg = parseCameraDeg(f[1]);
+  if (seq === null || deg === null || (f[2] !== "0" && f[2] !== "1")) return null;
+  return { seq, deg, active: f[2] === "1" };
 }
 
 /** Parses an `S` line into a status message. Returns null on bad CRC or a malformed line. */

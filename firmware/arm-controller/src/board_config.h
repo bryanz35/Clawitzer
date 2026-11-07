@@ -4,6 +4,15 @@
 
 namespace actuators {
 
+// Independent camera-servo output. This is not an arm joint, IK axis or calibrated mapping.
+// 0–180° maps linearly to the nominal 500–2500 µs window; verify the actual servo before
+// installing it, because many hobby servos bind before one or both nominal endpoints.
+inline constexpr int32_t kCameraServoPin = 21;
+inline constexpr int32_t kCameraMinUs = 500;
+inline constexpr int32_t kCameraMaxUs = 2500;
+inline constexpr float kCameraMinDeg = 0.0f;
+inline constexpr float kCameraMaxDeg = 180.0f;
+
 // NodeMCU-32S wiring and hard travel windows are code-owned, never restored from NVS.
 inline Config boardConfig() {
   Config config;

@@ -7,6 +7,7 @@ import { ReadlineParser, SerialPort } from "serialport";
 import { DEG, loadArm } from "@arm-mirror/kinematics";
 import {
   CALIBRATION_ENTER_ACK, CALIBRATION_REFERENCE_ACK, CALIBRATION_KEY_ARITY,
+  CALIBRATION_STEP_RATE,
   calibrationReplyMatches, crc8, encodeCalibration, nextSeq, parseCalibration,
   parseCalibrationReply, parseStatus, SERIAL_BAUD,
   type CalibrationCommand, type CalibrationKey, type CalibrationMutableKey, type CalibrationReply, type StatusMsg,
@@ -291,19 +292,18 @@ class Guide {
 
   private async measuredStep(): Promise<void> {
     const stepper = await this.get("stepper");
-    const [fullSteps, microsteps] = stepper;
-    const maximum = Math.min(64, Math.floor(fullSteps * microsteps / 36));
-    if (!Number.isInteger(microsteps) || maximum < 1) throw new Error("set plausible motor full steps and microsteps before arming the stepper");
-    console.log(`Motor-shaft encoder trial: one explicit jog, <=${maximum} microsteps and <=10 MOTOR degrees, never output-joint degrees. No automatic correction/retry. Observe the logical elbow direction (generated positive j2 direction), not just shaft direction.`);
-    const amount = await this.number(`Signed trial microsteps, nonzero integer [-${maximum},${maximum}]`, undefined,
-      (n) => Number.isInteger(n) && n !== 0 && Math.abs(n) <= maximum);
+    const microsteps = stepper[1];
+    if (!Number.isInteger(microsteps) || microsteps <= 0 || !Number.isFinite(stepper[0]) || stepper[0] <= 0) throw new Error("set plausible motor full steps and microsteps before arming the stepper");
+    console.log("Motor-shaft encoder trial: one explicit jog with NO bench travel cap. Choose a short move with known clearance. No automatic correction/retry. Observe the logical elbow direction (generated positive j2 direction), not just shaft direction.");
+    const amount = await this.number("Signed trial microsteps, nonzero integer [-2147483648,2147483647]", undefined,
+      (n) => Number.isInteger(n) && n !== 0 && n >= -2147483648 && n <= 2147483647);
     await this.confirmation("Arm ONLY stepper with unloaded linkage and e-stop ready, then perform exactly that single trial?", "ARM");
     await this.link.request({ verb: "arm", actuator: "stepper" });
     const before = await this.sample();
     if (before.raw === null || before.counts === null || before.steps === null) throw new Error("stepper encoder/counter unavailable; no trial movement sent");
     const reply = await this.link.request({ verb: "step", microsteps: amount });
     if (reply.kind !== "target") throw new Error("missing target counter");
-    const after = await this.waitTarget(reply.target);
+    const after = await this.waitTarget(reply.target, amount);
     // Disarm before asking observations: a stationary motor needs no hold lease for this entry.
     await this.link.request({ verb: "disarm" });
     if (after.raw === null || after.counts === null || after.steps === null) throw new Error("stepper encoder/counter unavailable; cannot fit a stepper mapping");
@@ -315,8 +315,8 @@ class Guide {
     await this.set("stepper", stepper);
   }
 
-  private async waitTarget(target: number): Promise<Sample> {
-    const deadline = Date.now() + 3000;
+  private async waitTarget(target: number, microsteps: number): Promise<Sample> {
+    const deadline = Date.now() + Math.ceil(Math.abs(microsteps) * 1000 / CALIBRATION_STEP_RATE) + 3000;
     let settledAt = 0;
     let settledCounts = 0;
     for (;;) {
@@ -355,6 +355,7 @@ class Guide {
         if (text === "help") {
           console.log("Quick jog: wrist -> type UNLOADED_ESTOP_READY once -> a+/a-/b+ (default 5us) or an explicit amount (a+ 100). Simultaneous sets are atomic: `wrist 1600 1400` moves A and B together, and `pose 1 1600 2 1400` sets any armed channels. base+/base-/grip+/grip- after arm base / arm gripper. wrist enters a FRESH draft, arms only A/B directly (no apply, encoder or motor questionnaire), then shows pulses. To retain a draft, use arm wrist instead. Each entry validates every pulse before writing, then samples; no assumed roll/pitch directions, sweeps or movement retries.");
           console.log("WARNING: center arming can jump to 1500us. The assumed 500–2500us PWM windows are NOT verified mechanical travel or learned angle mappings; stop before binding. Pins, e-stop and hard windows are read-only board_config.h configuration; reflash to change them.");
+          console.log(`step N: a nonzero signed 32-bit integer relative move at ${CALIBRATION_STEP_RATE} microsteps/s, with NO bench travel cap. The resulting counter must also fit signed 32-bit. Positive/negative follow raw driver direction. Keep linkage unloaded, verify clearance and keep physical e-stop ready.`);
           console.log("enter requires unloaded/e-stop acknowledgement; set mutable mappings only while disarmed. Each arm prepares and isolates its selected actuator/pair at center; apply is an optional full-setup diagnostic, never a prerequisite. Step is one guarded bounded jog and waits for its completed counter. status/get do not feed the lease; serialized 50ms keepalive after apply/arm preserves the firmware 200ms lease. disarm/save/exit stop it. export emits read-only hardware as comments/get values and mutable keys as recoverable set lines. save still requires FULL mapping/generated-envelope validation. exit discards UNSAVED draft, not quit. reference needs saved valid config, normal mode and manual marked homes EVERY boot/power loss. Clean normal-mode quit preserves reference; SIGINT/error halts and clears it. USB reopening may reset and require reference again. Never retry an uncertain move; inspect before restart.");
           continue;
         }
@@ -399,11 +400,6 @@ class Guide {
         if (command.verb === "enter" || command.verb === "reference") throw new InputError("use enter/reference without arguments for explicit safety confirmation");
         if (command.verb === "exit") await this.confirmation("Exit bench mode, disable outputs and discard unsaved draft? Normal motion remains blocked until marked-home reference.", "EXIT");
         if (command.verb === "save") await this.confirmation("Validate full generated envelope and persist all draft constants?", "SAVE");
-        if (command.verb === "step") {
-          const values = await this.get("stepper");
-          const maximum = Math.min(64, Math.floor(values[0] * values[1] / 36));
-          if (Math.abs(command.microsteps) > maximum) throw new InputError(`step exceeds 10 motor degrees; maximum ${maximum} microsteps`);
-        }
         const reply = await this.link.request(command);
         console.log(reply);
         if (command.verb === "jog" || command.verb === "pose") {
@@ -414,7 +410,7 @@ class Guide {
           const sample = await this.sample();
           console.log(`Wrist A=${sample.pulses[1]}us B=${sample.pulses[2]}us`);
         }
-        if (command.verb === "step" && reply.kind === "target") console.log(await this.waitTarget(reply.target));
+        if (command.verb === "step" && reply.kind === "target") console.log(await this.waitTarget(reply.target, command.microsteps));
       } catch (e) {
         if (this.signal.aborted) throw e;
         console.error(e instanceof Error ? e.message : e);

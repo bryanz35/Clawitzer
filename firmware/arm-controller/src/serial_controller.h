@@ -16,6 +16,7 @@ class SerialController {
   // Feed one received byte. Rejected frames never refresh the arm's watchdog.
   Result feed(char byte, uint32_t nowMs);
   size_t formatStatus(char* buffer, size_t capacity) const;
+  size_t formatCameraStatus(char* buffer, size_t capacity) const;
 
  private:
   Arm& arm_;

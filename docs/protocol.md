@@ -32,10 +32,26 @@ Canonical command/reply types, arities and strict parsers are in [`calibration.t
 - `enter,UNLOADED_ESTOP_READY` acknowledges unloaded/disconnected linkage and a physical power e-stop. All outputs start disabled. J motion is rejected throughout bench mode.
 - `set,<key>,<values...>` changes only a disarmed draft; mutable keys are `base`, `wrist`, `gripper`, `stepper`, `following`, `address`. `pins`, `estop` and `pulse` windows are read-only because they come from firmware `board_config.h`; `get` still reads them (`get,pulse,<index>`).
 - `arm,base|wrist|gripper|stepper` disarms, validates that scope, configures only those outputs and centers them. A servo-only scope needs no TMC, encoder or stepper mapping. `apply` is an optional full-setup diagnostic, never a prerequisite for arming.
-- `jog,<index>,<deltaUs>` is a nonzero integer step of at most ±2000 µs, no faster than 20 ms, and must land inside the code-owned hard window. `pose,<index>,<us>[,…]` sets up to four armed channels atomically: every pulse is validated before any write, so a rejected pose moves nothing. `step,<microsteps>` allows one non-overlapping jog, at most 64 microsteps and 10 motor degrees. `sample` returns four last pulse values plus encoder/counter fields that are `NA,NA,NA` when no stepper scope is prepared.
-- `keep` refreshes only the bench lease; no keepalive for 200 ms disables outputs and latches a bench fault. It never re-arms after expiry. The optional stepper helper waits for the target and at least 100 ms of stable encoder counts before fitting motor constants.
+- `jog,<index>,<deltaUs>` is a nonzero integer step of at most ±2000 µs, no faster than 20 ms, and must land inside the code-owned hard window. `pose,<index>,<us>[,…]` sets up to four armed channels atomically: every pulse is validated before any write, so a rejected pose moves nothing. `step,<microsteps>` allows one non-overlapping relative jog at 1000 microsteps/s. Under the explicitly user-approved unloaded bench exception, there is no fixed count or motor-angle travel cap: both the nonzero integer delta and resulting counter must fit signed 32-bit. Large moves can hit mechanical stops; the host must choose each finite move from known clearance. Normal generated joint limits and all servo hard windows remain unchanged. `sample` returns four last pulse values plus encoder/counter fields that are `NA,NA,NA` when no stepper scope is prepared.
+- `keep` refreshes only the bench lease; no keepalive for 200 ms disables outputs and latches a bench fault, including during a long jog. It never re-arms after expiry. The optional stepper helper waits for the target and at least 100 ms of stable encoder counts before fitting motor constants. The CLI completion deadline is nominal travel time at 1000 microsteps/s plus 3 seconds for settling/communication (4 seconds for 1000 microsteps), without movement retries.
 - `disarm` disables outputs. `save` disables, validates every generated joint-limit corner and commits only discovered mappings to NVS; code-owned pins/polarity/windows are never stored. Failed validation/save retains the previous record. `exit` discards unsaved changes and never automatically references.
 - In normal mode, `reference,HOME_MARK_CONFIRMED` requires saved valid calibration and physical alignment of **all** axes to generated home marks. It re-handshakes hardware, references the ambiguous geared motor encoder, zeros the step counter and starts safe homing. Every reset, e-stop, power loss or encoder/following fault requires a new confirmation. `halt` disables outputs and clears reference. No automatic stall correction.
+
+## Serial camera servo: laptop ↔ MCU
+
+The camera is an independent 0–180° PWM servo, not a sixth arm joint. It is not in the
+URDF, IK, joint limits or calibration/NVS. It shares the firmware e-stop input and is
+disabled by `halt`, e-stop or a detected servo-output fault; otherwise it works even when
+the arm is uncalibrated or unreferenced.
+
+- Command: `P,<seq>,<deg>*<crc8>`, exactly one angle in `[0,180]` with one decimal.
+- Status: `V,<seq>,<deg>,<active>*<crc8>`, where `active` is `0` or `1`.
+- `seq` is a separate uint16 stream; duplicate/older commands and out-of-range or fractional
+  values are rejected without changing the pulse. There is no automatic retry.
+- Default code-owned wiring is **GPIO21**, 50 Hz, nominal 500–2500 µs (`0°`→500 µs,
+  `90°`→1500 µs, `180°`→2500 µs). These endpoints are not measured; verify the actual
+  servo for binding before relying on the extremes. Pins/pulse limits are changed only in
+  `board_config.h` and require reflashing.
 
 ## WebRTC data channel `control` (Quest ↔ phone)
 

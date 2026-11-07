@@ -67,6 +67,10 @@ void pollSerial(uint32_t nowMs) {
 
 extern "C" void app_main() {
   serial.begin();
+  if (!hardware.configureCamera(actuators::boardConfig())) {
+    constexpr char failure[] = "# camera servo unavailable; arm control continues\n";
+    serial.write(failure, sizeof failure - 1);
+  }
   if (!storage.begin()) {
     constexpr char failure[] = "# NVS unavailable; outputs remain disabled until calibration can be saved\n";
     serial.write(failure, sizeof failure - 1);
@@ -77,6 +81,10 @@ extern "C" void app_main() {
   char status[proto::kMaxLineLen + 8];
   for (;;) {
     serial.flush();
+    if (!session.hasReply() && session.cameraStatusPending()) {
+      const size_t camera = controller.formatCameraStatus(status, sizeof status);
+      if (camera > 0 && serial.write(status, camera)) session.consumeCameraStatus();
+    }
     const uint32_t nowMs = millisNow();
     pollSerial(nowMs);
     if (session.hasReply() && serial.write(session.reply(), session.replyLength())) session.consumeReply();

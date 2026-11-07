@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Clawitzer · Joint Control</title>
+    <link rel="stylesheet" href="./src/joint-control.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#joint-controls">Skip to joint controls</a>
+    <div class="control-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Clawitzer / Desktop USB</p>
+          <h1>Joint control</h1>
+          <p class="page-description">Direct control of the arm through its USB serial connection.</p>
+        </div>
+        <div class="header-context">
+          <span class="operation-mode">Normal operation · firmware limits enforced</span>
+          <a href="./">Open VR operator <span aria-hidden="true">↗</span></a>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel connection-panel" aria-labelledby="connection-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">01 / Connect</p>
+              <h2 id="connection-heading">Arm connection</h2>
+            </div>
+            <span id="connection-state" class="state-label" role="status">Disconnected</span>
+          </div>
+          <p>Connect the controller by USB, then select its serial port. Opening a port may reset the controller and clear its reference.</p>
+          <div class="button-row">
+            <button id="connect" type="button" class="primary-button">Connect arm</button>
+            <button id="disconnect" type="button" disabled>Disconnect</button>
+          </div>
+          <p id="compatibility" class="support-note">Requires desktop Chrome or Edge with Web Serial, on localhost or a secure origin. USB connects directly to this computer; no phone relay is used.</p>
+        </section>
+
+        <section class="panel reference-panel" aria-labelledby="reference-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / Prepare</p>
+              <h2 id="reference-heading">Reference before motion</h2>
+            </div>
+            <span id="reference-state" class="state-label">Not referenced</span>
+          </div>
+          <p>Normal motion requires a complete, saved valid calibration. With outputs disabled, manually align <strong>all axes to their generated home marks</strong>. Reference must be repeated after reset, power loss, e-stop or a reference fault.</p>
+          <label class="confirmation" for="reference-confirm">
+            <input id="reference-confirm" type="checkbox" />
+            <span>I have physically aligned every axis to its home mark, cleared the workspace and have the physical e-stop ready.</span>
+          </label>
+          <div class="button-row">
+            <button id="reference" type="button" class="primary-button" disabled>Confirm reference &amp; home</button>
+            <button id="exit-bench" type="button" disabled>Exit bench mode…</button>
+          </div>
+          <p class="support-note">Referencing starts firmware-controlled homing. This panel never enters bench mode. Exiting an existing bench session discards its unsaved draft after confirmation.</p>
+        </section>
+
+        <section class="panel motion-panel" aria-labelledby="motion-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">03 / Move</p>
+              <h2 id="motion-heading">Five joints. Hold to jog.</h2>
+            </div>
+            <span id="control-state" class="state-label" role="status">Motion unavailable</span>
+          </div>
+          <p class="motion-instructions">Hold a joint’s − or + button with the mouse, or hold <kbd>Space</kbd> plus its direction key. You can also hold <kbd>Enter</kbd> on a focused jog button. Releasing the input or leaving this window requests a hold at the latest firmware-reported pose and stops streaming. Motion never resumes automatically.</p>
+
+          <div class="speed-control">
+            <label for="speed">Jog speed <output id="speed-value" for="speed">20%</output></label>
+            <input id="speed" type="range" min="5" max="100" step="5" value="20" aria-describedby="speed-note" />
+            <span id="speed-note" class="support-note">Percentage of each joint’s permitted speed</span>
+          </div>
+
+          <div id="joint-controls" class="joint-controls" tabindex="-1" aria-label="Joint jog controls"></div>
+
+          <div class="camera-control">
+            <div class="camera-head">
+              <div>
+                <p class="eyebrow">Independent output</p>
+                <h3>j6 · Camera</h3>
+              </div>
+              <span id="camera-state" class="state-label">Servo off</span>
+            </div>
+            <label for="camera-angle">Camera angle <output id="camera-value" for="camera-angle">90°</output></label>
+            <input id="camera-angle" type="range" min="0" max="180" step="1" value="90" aria-describedby="camera-note" />
+            <p id="camera-note" class="support-note">Independent 0–180° servo on GPIO21. No calibration or arm reference is required; the physical e-stop still cuts actuator power.</p>
+          </div>
+
+          <div class="motion-actions">
+            <div>
+              <button id="hold" type="button" class="hold-button" disabled>Hold position <span class="button-key">Esc</span></button>
+              <p class="support-note">Stop commanded motion without disabling outputs.</p>
+            </div>
+            <div>
+              <button id="disable" type="button" class="danger-button" disabled>Disable outputs…</button>
+              <p class="danger-note">May release a supported load. Requires reference again before motion.</p>
+            </div>
+          </div>
+          <p class="safety-note"><strong>Keep the physical e-stop within reach.</strong> Software hold and output disable are not a physical emergency stop. The firmware watchdog holds position if commands stop for 200 ms.</p>
+        </section>
+
+        <aside class="monitor-column" aria-label="Arm monitoring and keyboard help">
+          <section class="panel twin-panel" aria-labelledby="twin-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Monitor</p>
+                <h2 id="twin-heading">Arm preview</h2>
+              </div>
+              <span class="small-label">Not a camera feed</span>
+            </div>
+            <div id="twin-view" class="twin-view" role="img" aria-label="Three-dimensional arm preview" aria-describedby="twin-caption"></div>
+            <p id="twin-caption" class="support-note">Waiting for controller status. The preview uses firmware-estimated joint angles, not measured feedback from every axis. Always watch the real arm.</p>
+          </section>
+
+          <section class="panel telemetry-panel" aria-labelledby="status-heading">
+            <h2 id="status-heading">Controller status</h2>
+            <dl class="status-list">
+              <div><dt>Firmware</dt><dd id="firmware-state">Unknown</dd></div>
+              <div><dt>Calibration</dt><dd id="calibration-state">Not received</dd></div>
+              <div><dt>Last status</dt><dd id="last-update">No status received</dd></div>
+              <div class="fault-row"><dt>Fault</dt><dd id="fault">Not received</dd></div>
+            </dl>
+            <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">Connect the arm to read its calibration and reference state.</p>
+          </section>
+
+          <section class="panel keyboard-panel" aria-labelledby="keyboard-heading">
+            <h2 id="keyboard-heading">Keyboard guide</h2>
+            <p>Keep <kbd>Space</kbd> held, then hold a direction key.</p>
+            <dl class="keyboard-list">
+              <div><dt>Base</dt><dd><kbd>Q</kbd> + <span aria-hidden="true">/</span> <kbd>A</kbd> −</dd></div>
+              <div><dt>Elbow</dt><dd><kbd>W</kbd> + <span aria-hidden="true">/</span> <kbd>S</kbd> −</dd></div>
+              <div><dt>Forearm roll</dt><dd><kbd>E</kbd> + <span aria-hidden="true">/</span> <kbd>D</kbd> −</dd></div>
+              <div><dt>Wrist pitch</dt><dd><kbd>R</kbd> + <span aria-hidden="true">/</span> <kbd>F</kbd> −</dd></div>
+              <div><dt>Gripper</dt><dd><kbd>T</kbd> + <span aria-hidden="true">/</span> <kbd>G</kbd> −</dd></div>
+            </dl>
+            <p class="support-note"><kbd>Esc</kbd> requests a hold. Shortcuts are inactive while editing a field. A fresh input is required after a hold, disconnect or status interruption.</p>
+          </section>
+        </aside>
+      </main>
+      <footer>Separate servo power and a shared ground are required. Disconnecting USB does not deliberately disable outputs; the firmware watchdog holds motion.</footer>
+    </div>
+    <script type="module" src="./src/joint-control.ts"></script>
+  </body>
+</html>

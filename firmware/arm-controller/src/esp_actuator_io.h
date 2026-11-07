@@ -19,6 +19,10 @@ class EspActuatorIO final : public IO {
   EspActuatorIO& operator=(const EspActuatorIO&) = delete;
 
   bool configure(const Config& config, uint8_t outputMask) override;
+  /** Independent camera servo: configures its own PWM timer and the shared e-stop input. */
+  bool configureCamera(const Config& board);
+  bool cameraPulse(float deg) override;
+  bool cameraActive() const override;
   const char* error() const override;
   bool readEncoder(uint16_t& raw) override;
   bool servoPulse(uint8_t servo, int32_t microseconds) override;
@@ -34,6 +38,7 @@ class EspActuatorIO final : public IO {
   bool check(esp_err_t result, const char* operation);
   bool fault(const char* message);
   bool release();
+  bool releaseCamera();
   bool setupUart();
   bool tmcRead(uint8_t reg, uint32_t& value);
   bool tmcWriteChecked(uint8_t reg, uint32_t value);
@@ -52,6 +57,7 @@ class EspActuatorIO final : public IO {
   bool directionReady_ = false, estopReady_ = false;
   bool uartInstalled_ = false, spiBusInstalled_ = false, spiPending_ = false;
   bool timerEnabled_ = false, timerRunning_ = false, pwmTimerReady_ = false;
+  bool cameraConfigured_ = false, cameraActive_ = false;
   bool estopTripped_ = false;
 };
 

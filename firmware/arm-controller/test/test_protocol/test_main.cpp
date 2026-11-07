@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
@@ -11,6 +12,10 @@ void tearDown() {}
 
 static ParseResult parse(const char* line, JointCommand& out) {
   return proto::parseCommand(line, strlen(line), out);
+}
+
+static ParseResult parseCamera(const char* line, proto::CameraCommand& out) {
+  return proto::parseCameraCommand(line, strlen(line), out);
 }
 
 void test_crc_check_vector() {
@@ -35,6 +40,28 @@ void test_bad_crc() {
   JointCommand cmd{};
   TEST_ASSERT_EQUAL(ParseResult::BadCrc, parse("J,42,10.0,-20.5,0.0,45.0,-45.0*F7", cmd));
   TEST_ASSERT_EQUAL(ParseResult::BadCrc, parse("J,42,11.0,-20.5,0.0,45.0,-45.0*F6", cmd));
+}
+
+void test_camera_command_and_status() {
+  const char* payload = ",7,123.4";
+  char line[64];
+  snprintf(line, sizeof line, "P%s*%02X", payload,
+           proto::crc8(reinterpret_cast<const uint8_t*>(payload), strlen(payload)));
+  proto::CameraCommand camera{};
+  TEST_ASSERT_EQUAL(ParseResult::Ok, parseCamera(line, camera));
+  TEST_ASSERT_EQUAL_UINT16(7, camera.seq);
+  TEST_ASSERT_EQUAL_FLOAT(123.4f, camera.deg);
+
+  const char* outside = ",7,181.0";
+  snprintf(line, sizeof line, "P%s*%02X", outside,
+           proto::crc8(reinterpret_cast<const uint8_t*>(outside), strlen(outside)));
+  TEST_ASSERT_EQUAL(ParseResult::Malformed, parseCamera(line, camera));
+
+  char status[proto::kMaxLineLen];
+  const size_t n = proto::formatCameraStatus(status, sizeof status, 7, 123.4f, true);
+  TEST_ASSERT_GREATER_THAN(0, n);
+  TEST_ASSERT_EQUAL_STRING_LEN("V,7,123.4,1*", status, n - 3);
+  TEST_ASSERT_EQUAL_CHAR('\n', status[n - 1]);
 }
 
 void test_malformed() {
@@ -70,6 +97,7 @@ int main() {
   RUN_TEST(test_crc_check_vector);
   RUN_TEST(test_valid_line);
   RUN_TEST(test_bad_crc);
+  RUN_TEST(test_camera_command_and_status);
   RUN_TEST(test_malformed);
   RUN_TEST(test_status_line_format);
   RUN_TEST(test_line_reader_drops_overlong_lines);
