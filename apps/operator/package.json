@@ -1,0 +1,23 @@
+{
+  "name": "@arm-mirror/operator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arm-mirror/protocol": "*",
+    "@arm-mirror/filters": "*",
+    "@arm-mirror/kinematics": "*",
+    "@iwer/devui": "^2.8.0",
+    "iwer": "^2.8.0",
+    "three": "^0.187.0",
+    "urdf-loader": "^0.13.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0"
+  }
+}

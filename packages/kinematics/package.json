@@ -1,0 +1,21 @@
+{
+  "name": "@arm-mirror/kinematics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arm-mirror/protocol": "*",
+    "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#v0.0.7",
+    "three": "^0.187.0",
+    "urdf-loader": "^0.13.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0"
+  }
+}

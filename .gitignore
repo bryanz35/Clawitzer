@@ -1,0 +1,25 @@
+node_modules
+dist
+apps/robot-android/app/src/main/assets/web
+apps/robot-android/.gradle
+apps/robot-android/**/build
+apps/robot-android/local.properties
+apps/robot-android/.idea
+apps/robot-android/.kotlin
+.pio
+.cache/
+.ccls-cache/
+.direnv/
+firmware/**/include/secrets.h
+build/
+firmware/arm-controller/sdkconfig
+firmware/arm-controller/sdkconfig.old
+firmware/arm-controller/sdkconfig.*
+!firmware/arm-controller/sdkconfig.defaults
+CLAUDE.local.md
+graft/.cache
+.claude
+
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

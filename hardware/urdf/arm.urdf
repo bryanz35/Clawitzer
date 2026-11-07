@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<!--
+  Arm Mirror: SINGLE SOURCE OF TRUTH for arm geometry and joint limits.
+  After editing, run `npm run gen:arm-config` to regenerate firmware/arm-controller/include/arm_config.h.
+  Stop and ask the team before changing joint limits (see root CLAUDE.md).
+
+  Actuators: j1 base yaw (DS3235), j2 elbow pitch (TMC2209 + motor-shaft AS5047P),
+             j3 forearm roll + j4 wrist pitch (differential MS62 pair), j5 gripper (MS62).
+  Geometry and limits below remain placeholders until the mechanical design is final.
+    TODO(open-item): joint limits. Placeholder is a conservative ±45° (±0.7854 rad) on every joint.
+    TODO(open-item): velocity limits. Placeholder is 0.5 rad/s (~29°/s) on every joint.
+    TODO(open-item): acceleration limits (<arm_mirror acceleration>, rad/s²). Placeholder is 1.0.
+    TODO(open-item): home pose (<arm_mirror home>, rad). Placeholder is 0 on every joint.
+    TODO(open-item): link lengths. Placeholder is a 0.25 m forearm, 0.02 m wrist offset, 0.08 m hand.
+    Gripper j5 is an independent grasp coordinate, not wrist yaw. Its lower/upper command
+    limits map to calibrated closed/open positions; the hand visual is not a finger model.
+    Pose IK retains its existing position + 2 orientation objective; with four pose joints,
+    incompatible targets return the nearest pose rather than moving the gripper.
+
+  Conventions: URDF/ROS frame (meters, radians, +X forward, +Y left, +Z up). WebXR is +Y up, -Z forward;
+  convert with xrToArm() in packages/kinematics.
+  Only revolute and fixed joints, a single serial chain, and axes along ±X/±Y/±Z are supported.
+
+  <arm_mirror home="…" acceleration="…"/> is a project-specific child of <joint>. Standard URDF has no
+  home pose or acceleration limit; urdf-loader and ROS tools ignore unknown elements.
+-->
+<robot name="arm_mirror">
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.08 0.05"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="j1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.7854" upper="0.7854" effort="1" velocity="0.5"/>
+    <arm_mirror home="0" acceleration="1.0"/>
+  </joint>
+
+  <link name="link1">
+    <visual>
+      <origin xyz="0 0 0.015" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.03" length="0.03"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="j2" type="revolute">
+    <parent link="link1"/>
+    <child link="forearm"/>
+    <origin xyz="0 0 0.03" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.7854" upper="0.7854" effort="1" velocity="0.5"/>
+    <arm_mirror home="0" acceleration="1.0"/>
+  </joint>
+
+  <link name="forearm">
+    <visual>
+      <origin xyz="0.125 0 0" rpy="0 1.5708 0"/>
+      <geometry><cylinder radius="0.02" length="0.25"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="j3" type="revolute">
+    <parent link="forearm"/>
+    <child link="wrist_roll_link"/>
+    <origin xyz="0.25 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.7854" upper="0.7854" effort="1" velocity="0.5"/>
+    <arm_mirror home="0" acceleration="1.0"/>
+  </joint>
+
+  <link name="wrist_roll_link">
+    <visual>
+      <origin xyz="0.01 0 0" rpy="0 1.5708 0"/>
+      <geometry><cylinder radius="0.022" length="0.02"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="j4" type="revolute">
+    <parent link="wrist_roll_link"/>
+    <child link="wrist_pitch_link"/>
+    <origin xyz="0.02 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.7854" upper="0.7854" effort="1" velocity="0.5"/>
+    <arm_mirror home="0" acceleration="1.0"/>
+  </joint>
+
+  <link name="wrist_pitch_link"/>
+
+  <joint name="j5" type="revolute">
+    <parent link="wrist_pitch_link"/>
+    <child link="hand"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.7854" upper="0.7854" effort="1" velocity="0.5"/>
+    <arm_mirror home="0" acceleration="1.0" role="gripper"/>
+  </joint>
+
+  <link name="hand">
+    <visual>
+      <origin xyz="0.04 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.05 0.015"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="tool_joint" type="fixed">
+    <parent link="hand"/>
+    <child link="tool"/>
+    <origin xyz="0.08 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="tool"/>
+
+</robot>

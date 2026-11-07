@@ -1,0 +1,15 @@
+{
+  "name": "@arm-mirror/tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serial": "tsx serial-test/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arm-mirror/kinematics": "*",
+    "@arm-mirror/protocol": "*",
+    "serialport": "^13.0.0"
+  }
+}

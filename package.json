@@ -1,0 +1,25 @@
+{
+  "name": "arm-mirror",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools"
+  ],
+  "scripts": {
+    "dev:operator": "npm run dev -w @arm-mirror/operator",
+    "build": "npm run build -w @arm-mirror/operator",
+    "android": "npm run build && cd apps/robot-android && ./gradlew installDebug",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "gen:arm-config": "tsx tools/gen-arm-config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}
