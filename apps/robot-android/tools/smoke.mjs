@@ -3,7 +3,7 @@
 // .local names), loads the app's root page through `adb forward`, and plays the operator's
 // WebRTC role: offer, control channel, recvonly video. Then it sends 1 s of engaged joints.
 //
-//   adb forward tcp:8080 tcp:8080     # app running, "Mock MCU" on, camera started
+//   adb forward tcp:8080 tcp:8080     # app running, camera allowed, Status ▸ "Mock MCU" on
 //   node apps/robot-android/tools/smoke.mjs
 //
 // Passes when the data channel opens, status shows ACTIVE then WATCHDOG, camOrient arrives
