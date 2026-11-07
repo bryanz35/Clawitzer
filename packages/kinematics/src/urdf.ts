@@ -2,8 +2,8 @@ import type { Vec3 } from "./math";
 
 // Minimal URDF reader for the subset arm.urdf uses: a single serial chain of revolute and
 // fixed joints with axes along ±X/±Y/±Z. Parses text directly (no DOMParser) so it runs in
-// Node tests and the browser alike. Anything outside the subset throws. The twin uses
-// urdf-loader for rendering; tools/gen-arm-config.ts uses this reader for the firmware C header.
+// Node tests and the browser alike. Anything outside the subset throws.
+// tools/gen-arm-config.ts uses this reader for the firmware C header.
 
 export interface ChainJoint {
   name: string;

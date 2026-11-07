@@ -17,7 +17,7 @@ npm run android             # build + install the phone app via adb (AVD or phon
 
 Develop without hardware:
 
-- **Operator on the desktop:** run `npm run dev:operator`, then open `http://localhost:5173/operator/?emulate=1&mockRobot=1`. This uses IWER with the Quest 3 preset and drives only the digital twin.
+- **Operator on the desktop:** run `npm run dev:operator`, then open `http://localhost:5173/operator/?emulate=1&mockRobot=1`. This uses IWER with the Quest 3 preset and echoes commands locally (no robot).
 - **Phone app without hardware:** see [`apps/robot-android/README.md`](apps/robot-android/README.md). Run it on the `Galaxy_S25_Ultra` AVD with the "Mock MCU" switch, then `node apps/robot-android/tools/smoke.mjs`.
 - **Operator against the phone app:** `adb forward tcp:8080 tcp:8080`, then open `http://localhost:8080/operator/?emulate=1`.
 
@@ -86,7 +86,6 @@ Joint order stays `j1` base yaw (DS3235), `j2` elbow pitch (TMC2209 stepper),
 `j3` forearm roll + `j4` wrist pitch (differential MS62 pair), `j5` gripper (MS62).
 `j5` is **not wrist yaw**: its lower/upper generated limits mean closed/open.
 Pose IK holds the independent gripper coordinate; it does not use grasp to solve orientation.
-The placeholder twin shows arm pose, not finger articulation.
 
 **NodeMCU-32S / ESP-WROOM-32 pinout:** `P<number>` means **GPIO<number>**,
 not a physical header position. These are the firmware defaults in

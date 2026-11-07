@@ -20,13 +20,13 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 4. At 50 Hz, the operator sends `joints {seq, deg[5], engaged}` on the unordered `control` data channel.
 5. The phone drops stale or reordered messages by seq. It forwards to serial **only if `engaged`**, as `J,<seq>,…*crc`, using its own serial seq.
 6. The firmware checks the CRC and seq, clamps position, velocity and acceleration per joint, and steps the servos at 100 Hz. If no valid command arrives for 200 ms, it holds and reports `WATCHDOG`.
-7. Status flows back at 10 Hz as `S,<seq>,<state>,…` → `status` on the data channel → the ghost twin in VR.
+7. Status flows back at 10 Hz as `S,<seq>,<state>,…` → `status` on the data channel → the arm state on the HUD in VR.
 
 ## Components
 
-**apps/operator (Quest Browser, WebXR + Three.js).** Owns all user-facing logic: tracking, the deadman, filtering, IK, the digital twin and the video panel.
+**apps/operator (Quest Browser, WebXR + Three.js).** Owns all user-facing logic: tracking, the deadman, filtering, IK, the HUD and the video panel.
 - The IK runs here, not on the phone. The Quest has the poses, and keeping the phone a dumb relay keeps its thermals down.
-- Two twins: a solid one for the commanded pose and a ghost for the MCU-reported pose. Any gap between them is visible lag or limiting.
+- No in-VR 3D arm copy. The HUD shows commanded angles and the MCU-reported state; the video panel shows the real arm.
 - `?emulate=1` installs IWER for desktop work. `?mockRobot=1` runs without a phone.
 
 **apps/robot-android (native Android app, Kotlin + Compose).** One process does what the phone web page and the Termux server used to do.
@@ -44,7 +44,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - A minimal URDF reader (single serial chain, revolute/fixed joints, principal axes) that runs in Node and the browser.
 - `ArmIK` wraps closed-chain-ik's `Solver`.
 - closed-chain-ik goals constrain all three rotations or none. To get position + 2 orientation DOF, an unlimited virtual joint about the sacrificed tool axis is appended before a full 6-DOF goal.
-- `j5` is an independent gripper coordinate, not wrist yaw. URDF `role="gripper"` excludes it from tool-pose IK and twin link rotation; solving preserves its current angle. Four pose axes may only approximate the existing position + 2 orientation goal; unreachable targets use the nearest accepted bounded solution.
+- `j5` is an independent gripper coordinate, not wrist yaw. URDF `role="gripper"` excludes it from tool-pose IK; solving preserves its current angle. Four pose axes may only approximate the existing position + 2 orientation goal; unreachable targets use the nearest accepted bounded solution.
 
 **packages/filters.** Scalar and quaternion One Euro filters.
 
