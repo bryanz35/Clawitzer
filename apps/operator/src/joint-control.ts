@@ -1,13 +1,8 @@
-import {
-  AmbientLight, Color, DirectionalLight, GridHelper, PerspectiveCamera, Scene, WebGLRenderer,
-} from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { CMD_HZ, type JointDeg } from "@arm-mirror/protocol";
+import { CMD_HZ } from "@arm-mirror/protocol";
 import { DEG, loadArm } from "@arm-mirror/kinematics";
 import urdfText from "../../../hardware/urdf/arm.urdf?raw";
 import { JointJog, JOINT_KEYS } from "./joint-jog";
 import { JointSerial } from "./joint-serial";
-import { Twin } from "./twin";
 
 const model = loadArm(urdfText);
 const serial = new JointSerial();
@@ -40,7 +35,6 @@ const fault = element("fault");
 const notice = element("notice");
 const controlState = element("control-state");
 const lastUpdate = element("last-update");
-const twinCaption = element("twin-caption");
 let actions = 0;
 let message = "Connect the controller. No motion is sent until calibration, reference and homing are ready.";
 let previousConnection = serial.state.connection;
@@ -49,7 +43,6 @@ let previousFirmwareState = "";
 let writeStarted: number | null = null;
 let cameraPending: number | null = null;
 let cameraSentAt = 0;
-let preview: { command: Twin; reported: Twin } | null = null;
 
 const rows = model.names.map((name, joint) => {
   const row = document.createElement("article");
@@ -302,59 +295,7 @@ function render(): void {
   }
   setText(notice, state.error ?? (connected && calibration && !calibration.configured ?
     "No valid saved full-arm calibration. Bench current/microstep settings alone are not calibration. Complete and save all actuator mappings using the calibration CLI before normal control." : message));
-  if (preview) {
-    if (status) {
-      preview.reported.object.visible = true;
-      preview.reported.setDeg(status.deg);
-      preview.command.setDeg(jog.target ?? status.deg);
-      twinCaption.textContent = "Solid: commanded pose · ghost: firmware estimate (not measured all-axis feedback). Geometry is provisional; gripper mesh does not animate grasp.";
-    } else {
-      preview.reported.object.visible = false;
-      twinCaption.textContent = "Home-pose model preview only · no controller telemetry. Geometry is provisional; gripper mesh does not animate grasp.";
-    }
-  }
 }
-
-function installPreview(): void {
-  try {
-    const host = element("twin-view");
-    const renderer = new WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    host.append(renderer.domElement);
-    const scene = new Scene();
-    scene.background = new Color(0x10191f);
-    scene.add(new AmbientLight(0xffffff, 1.5));
-    const light = new DirectionalLight(0xffffff, 2);
-    light.position.set(1, 2, 1);
-    scene.add(light, new GridHelper(1, 10, 0x456066, 0x25363d));
-    const camera = new PerspectiveCamera(40, 1, 0.01, 10);
-    camera.position.set(0.65, 0.45, 0.65);
-    const orbit = new OrbitControls(camera, renderer.domElement);
-    orbit.target.set(0.15, 0.1, 0);
-    orbit.minDistance = 0.25;
-    orbit.maxDistance = 2;
-    orbit.update();
-    preview = {
-      command: new Twin(urdfText, model, { color: 0x76ddbd }),
-      reported: new Twin(urdfText, model, { color: 0xc8e0e8, opacity: 0.25 }),
-    };
-    preview.command.setDeg(model.restPose.map((value) => value * DEG) as JointDeg);
-    preview.reported.object.visible = false;
-    scene.add(preview.command.object, preview.reported.object);
-    new ResizeObserver(() => {
-      const width = host.clientWidth;
-      const height = host.clientHeight;
-      if (width === 0 || height === 0) return;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    }).observe(host);
-    renderer.setAnimationLoop(() => renderer.render(scene, camera));
-  } catch (error) {
-    twinCaption.textContent = `3D preview unavailable: ${error instanceof Error ? error.message : String(error)}. Joint controls remain available.`;
-  }
-}
-
 const compatibility = element("compatibility");
 compatibility.hidden = serial.supported;
 if (!serial.supported) {
@@ -365,6 +306,5 @@ serial.onChange = () => {
   jog.sync(serial.state.status?.deg ?? null, serial.ready && actions === 0);
   render();
 };
-installPreview();
 render();
 setInterval(pump, 1000 / CMD_HZ);
