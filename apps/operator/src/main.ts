@@ -41,10 +41,8 @@ const MOCK_ROBOT = params.get("mockRobot") === "1";
 const HAND: "left" | "right" = params.get("hand") === "left" ? "left" : "right";
 const SIGNAL_URL = params.get("signal") ?? `ws://${location.hostname}:8080/signal`;
 
-// TODO(open-item): link lengths. Human elbow→knuckle vs. arm reach; 1.0 until the arm is built.
+// Arm elbow→tool is 0.38 m, close to a human elbow→knuckle; tune per operator after first tests.
 const HAND_TO_ARM_SCALE = 1.0;
-// TODO(open-item): joint list. Elbow (j2) position in the arm base frame, from arm.urdf j1 + j2 origins.
-const ELBOW_IN_ARM: Vec3 = [0, 0, 0.08];
 
 const statusEl = document.getElementById("status")!;
 const enterButton = document.getElementById("enter-vr") as HTMLButtonElement;
@@ -107,6 +105,10 @@ async function main(): Promise<void> {
 
   const model = loadArm(urdfText);
   const ik = new ArmIK(model);
+  // Elbow (j2) sits off the j1 axis, so it swings with base yaw: keep its reach and height from arm.urdf.
+  const origin = (name: string) => model.chain.find((j) => j.name === name)!.xyz;
+  const elbowReach = Math.hypot(origin("j2")[0], origin("j2")[1]);
+  const elbowHeight = origin("j1")[2] + origin("j2")[2];
 
   const video = new VideoPanel();
   video.mesh.position.set(0, 1.5, -2);
@@ -167,7 +169,10 @@ async function main(): Promise<void> {
       if (deadman.engaged && s.hand && s.elbow) {
         const t = timeMs / 1000;
         const rel = s.hand.knuckle.map((k, i) => (k - s.elbow![i]) * HAND_TO_ARM_SCALE) as Vec3;
-        const p = xrToArmVec(rel).map((v, i) => posFilter[i].filter(v + ELBOW_IN_ARM[i], t)) as Vec3;
+        const v = xrToArmVec(rel);
+        const yaw = Math.atan2(v[1], v[0]); // forearm heading; the arm's j1 follows it
+        const elbow: Vec3 = [elbowReach * Math.cos(yaw), elbowReach * Math.sin(yaw), elbowHeight];
+        const p = v.map((x, i) => posFilter[i].filter(x + elbow[i], t)) as Vec3;
         const q: Quat = quatFilter.filter(xrToArmQuat(s.hand.wrist.orientation), t);
         const r = ik.solve(p, q);
         commanded = r.deg;
@@ -184,8 +189,8 @@ async function main(): Promise<void> {
       send(false, timeMs);
     }
 
-    // TODO(open-item): head pose → pan/tilt stand. No message for stand commands exists in
-    // packages/protocol yet (servo wiring and controller for the stand are undecided).
+    // TODO(open-item): head yaw → pan stand. Pan only (180°, no tilt), one 25 kg servo on the arm
+    // ESP32; head pitch must come from the video crop. No stand message exists in packages/protocol yet.
 
     const lines = [
       ...formatHead(headQ),

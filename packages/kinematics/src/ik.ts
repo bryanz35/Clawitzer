@@ -8,8 +8,8 @@ export type FreeAxis = "x" | "y" | "z";
 
 export interface ArmIKOptions {
   /**
-   * The tool-axis rotation ignored by the existing pose objective. TODO(open-item): the team hasn't chosen it yet;
-   * "x" (roll about the tool's forward axis) is a placeholder. Record the choice in arm.urdf.
+   * The tool-axis rotation ignored by the existing pose objective. "z" = hand swing left/right: the arm has
+   * no wrist yaw, base yaw j1 supplies left/right (team choice, recorded in arm.urdf).
    */
   freeAxis: FreeAxis;
   /** Reject any solution that moves a joint more than this per solve(). */
@@ -23,7 +23,7 @@ export interface ArmIKOptions {
 }
 
 export const DEFAULT_IK_OPTIONS: ArmIKOptions = {
-  freeAxis: "x", // TODO(open-item): sacrificed IK axis
+  freeAxis: "z",
   maxStepDeg: MAX_JOINT_STEP_DEG,
   positionTolerance: 0.005,
   rotationTolerance: 2 * RAD,

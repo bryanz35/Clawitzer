@@ -210,32 +210,32 @@ void test_differential_mixes_both_inputs_and_maps_every_generated_corner() {
   const Config config = calibrated();
   TEST_ASSERT_TRUE(validate(config, nullptr, 0));
   float deg[ARM_NUM_JOINTS] = {};
-  deg[ForearmRoll] = 10;
+  deg[WristRoll] = 10;
   deg[WristPitch] = -5;
   Targets target;
   TEST_ASSERT_TRUE(map(config, deg, target));
-  TEST_ASSERT_EQUAL_INT32(1525, target.pulseUs[WristA]);
-  TEST_ASSERT_EQUAL_INT32(1445, target.pulseUs[WristB]);
+  TEST_ASSERT_EQUAL_INT32(1510, target.pulseUs[WristA]);
+  TEST_ASSERT_EQUAL_INT32(1470, target.pulseUs[WristB]);
   for (unsigned corner = 0; corner < (1u << ARM_NUM_JOINTS); ++corner) {
     for (size_t joint = 0; joint < ARM_NUM_JOINTS; ++joint)
       deg[joint] = corner & (1u << joint) ? ARM_JOINT_MAX_DEG[joint] : ARM_JOINT_MIN_DEG[joint];
     TEST_ASSERT_TRUE(map(config, deg, target));
-    TEST_ASSERT_EQUAL_INT32(lroundf(1500 + 6 * deg[BaseYaw]), target.pulseUs[Base]);
-    TEST_ASSERT_EQUAL_INT32(lroundf(1500 + 4 * deg[ForearmRoll] + 3 * deg[WristPitch]), target.pulseUs[WristA]);
-    TEST_ASSERT_EQUAL_INT32(lroundf(1500 - 4 * deg[ForearmRoll] + 3 * deg[WristPitch]), target.pulseUs[WristB]);
-    TEST_ASSERT_EQUAL_INT32(lroundf(1500 - 7 * deg[Grip]), target.pulseUs[Gripper]);
+    TEST_ASSERT_EQUAL_INT32(lroundf(1500 + 2 * deg[BaseYaw]), target.pulseUs[Base]);
+    TEST_ASSERT_EQUAL_INT32(lroundf(1500 + 2 * deg[WristRoll] + 2 * deg[WristPitch]), target.pulseUs[WristA]);
+    TEST_ASSERT_EQUAL_INT32(lroundf(1500 - 2 * deg[WristRoll] + 2 * deg[WristPitch]), target.pulseUs[WristB]);
+    TEST_ASSERT_EQUAL_INT32(lroundf(1500 - 3 * deg[Grip]), target.pulseUs[Gripper]);
   }
 }
 
 void test_envelope_rejects_coupled_corner_without_clipping_or_partial_targets() {
   Config config = calibrated();
-  config.wristRollUsPerDeg[0] = config.wristPitchUsPerDeg[0] = 7;
+  config.wristRollUsPerDeg[0] = config.wristPitchUsPerDeg[0] = 4;
   TEST_ASSERT_FALSE(validate(config, nullptr, 0));  // Each isolated axis fits; their combined corner does not.
   float deg[ARM_NUM_JOINTS] = {};
   Targets target;
   target.steps = 123;
   for (size_t i = 0; i < kServoCount; ++i) target.pulseUs[i] = 987;
-  deg[ForearmRoll] = ARM_JOINT_MAX_DEG[ForearmRoll];
+  deg[WristRoll] = ARM_JOINT_MAX_DEG[WristRoll];
   deg[WristPitch] = ARM_JOINT_MAX_DEG[WristPitch];
   TEST_ASSERT_FALSE(map(config, deg, target));
   TEST_ASSERT_EQUAL_INT32(123, target.steps);

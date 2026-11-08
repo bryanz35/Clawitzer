@@ -3,6 +3,7 @@
 
 namespace testsupport {
 // Explicit test bench measurements, never defaults supplied to real hardware.
+// Scaled so the generated envelope (j1 ±180°, wrist ±90° coupled) fits the 1000–2000 µs window.
 inline actuators::Config calibrated() {
   using namespace actuators;
   Config config;
@@ -23,12 +24,12 @@ inline actuators::Config calibrated() {
   config.pins.spiClock = 26;
   config.pins.spiCs = 27;
   config.pins.estop = 35;
-  config.servo[Base].usPerDeg = 6;
-  config.servo[Gripper].usPerDeg = -7;
-  config.wristRollUsPerDeg[0] = 4;
-  config.wristPitchUsPerDeg[0] = 3;
-  config.wristRollUsPerDeg[1] = -4;
-  config.wristPitchUsPerDeg[1] = 3;
+  config.servo[Base].usPerDeg = 2;
+  config.servo[Gripper].usPerDeg = -3;
+  config.wristRollUsPerDeg[0] = 2;
+  config.wristPitchUsPerDeg[0] = 2;
+  config.wristRollUsPerDeg[1] = -2;
+  config.wristPitchUsPerDeg[1] = 2;
   config.motorStepsPerRev = 200;
   config.microsteps = 8;
   config.gearRatio = 17;

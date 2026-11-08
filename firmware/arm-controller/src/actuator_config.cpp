@@ -62,9 +62,9 @@ bool mapChecked(const Config& config, const float* deg, Targets& result) {
   }
   const double pulse[kServoCount] = {
     config.servo[Base].centerUs + static_cast<double>(config.servo[Base].usPerDeg) * deg[BaseYaw],
-    config.servo[WristA].centerUs + static_cast<double>(config.wristRollUsPerDeg[0]) * deg[ForearmRoll] +
+    config.servo[WristA].centerUs + static_cast<double>(config.wristRollUsPerDeg[0]) * deg[WristRoll] +
       static_cast<double>(config.wristPitchUsPerDeg[0]) * deg[WristPitch],
-    config.servo[WristB].centerUs + static_cast<double>(config.wristRollUsPerDeg[1]) * deg[ForearmRoll] +
+    config.servo[WristB].centerUs + static_cast<double>(config.wristRollUsPerDeg[1]) * deg[WristRoll] +
       static_cast<double>(config.wristPitchUsPerDeg[1]) * deg[WristPitch],
     config.servo[Gripper].centerUs + static_cast<double>(config.servo[Gripper].usPerDeg) * deg[Grip]
   };

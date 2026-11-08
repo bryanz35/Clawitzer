@@ -82,8 +82,8 @@ those still require real-hardware validation with the configured safety limits.
 
 ### Mixed actuators and bench calibration
 
-Joint order stays `j1` base yaw (DS3235), `j2` elbow pitch (TMC2209 stepper),
-`j3` forearm roll + `j4` wrist pitch (differential MS62 pair), `j5` gripper (MS62).
+Joint order: `j1` base yaw (DS3235), `j2` elbow pitch (TMC2209 stepper),
+`j3` wrist pitch + `j4` wrist roll (differential MS62 pair), `j5` gripper (MS62).
 `j5` is **not wrist yaw**: its lower/upper generated limits mean closed/open.
 Pose IK holds the independent gripper coordinate; it does not use grasp to solve orientation.
 
@@ -223,4 +223,4 @@ Demo day: see [`apps/robot-android/README.md`](apps/robot-android/README.md) (th
 - [`CLAUDE.md`](CLAUDE.md): architecture, key decisions, **safety invariants**, conventions.
 - [`docs/architecture.md`](docs/architecture.md), [`docs/protocol.md`](docs/protocol.md), [`docs/decisions.md`](docs/decisions.md).
 - [`docs/STATUS.md`](docs/STATUS.md): build-order checklist and owners.
-- [`hardware/urdf/arm.urdf`](hardware/urdf/arm.urdf): single source of truth for geometry and limits. Every value is currently a `TODO(open-item)` placeholder.
+- [`hardware/urdf/arm.urdf`](hardware/urdf/arm.urdf): single source of truth for geometry and limits. Geometry, limits and home come from `docs/questions.md`; velocity/acceleration are still `TODO(open-item)` placeholders.

@@ -199,8 +199,8 @@ void test_save_is_validated_atomic_and_gear_is_persistent_not_fixed() {
   TEST_ASSERT_TRUE(command(session, 2, "set,wrist,1500,0,0,1500,0,0", 20));
   TEST_ASSERT_FALSE(command(session, 3, "save", 30));
   TEST_ASSERT_EQUAL_INT(0, store.saves);
-  TEST_ASSERT_EQUAL_FLOAT(4, store.saved.wristRollUsPerDeg[0]);
-  TEST_ASSERT_TRUE(command(session, 4, "set,wrist,1500,4,3,1500,-4,3", 40));
+  TEST_ASSERT_EQUAL_FLOAT(2, store.saved.wristRollUsPerDeg[0]);
+  TEST_ASSERT_TRUE(command(session, 4, "set,wrist,1500,2,2,1500,-2,2", 40));
   TEST_ASSERT_TRUE(command(session, 5, "set,stepper,200,8,19,-1,-1,600,0.11", 50));
   TEST_ASSERT_TRUE(command(session, 6, "save", 60));
   TEST_ASSERT_EQUAL_INT(1, store.saves);

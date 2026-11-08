@@ -280,7 +280,7 @@ class Guide {
       if (/^[ab][+-]$/.test(action)) {
         console.log(await this.link.request({ verb: "jog", index: action[0] === "a" ? 1 : 2, deltaUs: action[1] === "+" ? 5 : -5 }));
       } else if (action === "measure") {
-        const roll = await this.angle(2, "Actual forearm roll"), pitch = await this.angle(3, "Actual wrist pitch");
+        const roll = await this.angle(3, "Actual wrist roll"), pitch = await this.angle(2, "Actual wrist pitch");
         const sample = await this.sample();
         measured.push({ roll, pitch, a: sample.pulses[1], b: sample.pulses[2] }); i++;
       } else console.error("Use a+/a-/b+/b-/measure/abort.");

@@ -10,7 +10,7 @@ constexpr size_t kServoCount = 4;
 constexpr uint8_t kStepperOutput = 1u << 4;
 constexpr uint8_t kAllOutputs = 0x1f;
 enum ServoIndex : uint8_t { Base = 0, WristA = 1, WristB = 2, Gripper = 3 };
-enum JointIndex : uint8_t { BaseYaw = 0, ElbowPitch = 1, ForearmRoll = 2, WristPitch = 3, Grip = 4 };
+enum JointIndex : uint8_t { BaseYaw = 0, ElbowPitch = 1, WristPitch = 2, WristRoll = 3, Grip = 4 };
 constexpr uint32_t kConfigVersion = 2;  // NodeMCU-32S wiring; reject earlier ESP32-S3 records.
 
 struct Pins {

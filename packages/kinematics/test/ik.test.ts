@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ArmIK, loadArm, quatAngle, rpyToQuat, xrToArmQuat, xrToArmVec } from "../src";
+import { ArmIK, DEG, loadArm, quatAngle, rpyToQuat, xrToArmQuat, xrToArmVec } from "../src";
 
 /** Effectively disables the step cap, for tests that check convergence rather than the cap. */
 const MAX_STEP_FOR_TESTS = 1e9;
@@ -8,11 +8,12 @@ const MAX_STEP_FOR_TESTS = 1e9;
 const urdf = readFileSync(new URL("../../../hardware/urdf/arm.urdf", import.meta.url), "utf8");
 
 describe("loadArm", () => {
-  it("reads the placeholder URDF", () => {
+  it("reads the arm URDF", () => {
     const arm = loadArm(urdf);
     expect(arm.names).toEqual(["j1", "j2", "j3", "j4", "j5"]);
     expect(arm.restPose).toEqual([0, 0, 0, 0, 0]);
-    expect(arm.limits[0]).toEqual({ lower: -0.7854, upper: 0.7854, velocity: 0.5, acceleration: 1 });
+    expect(arm.limits[0]).toEqual({ lower: -3.1416, upper: 3.1416, velocity: 0.5, acceleration: 1 });
+    expect(arm.limits[1]).toMatchObject({ lower: -1.5708, upper: 0.349066 });
     expect(arm.baseLink).toBe("base_link");
     expect(arm.tipLink).toBe("tool");
   });
@@ -51,12 +52,14 @@ describe("ArmIK", () => {
     const ik = new ArmIK(model, { maxStepDeg: MAX_STEP_FOR_TESTS });
     // Orientation and position compete; an unreachable optimum need not pin a joint at its limit.
     const quat = rpyToQuat([0, 0, 0]);
-    let r = ik.solve([-0.2, 0.2, 0.08], quat);
-    for (let i = 0; i < 20; i++) r = ik.solve([-0.2, 0.2, 0.08], quat);
+    // Beyond the ~0.46 m reach; also high, so j2 wants to pass its 90°-up limit.
+    const far: [number, number, number] = [0.3, 0.2, 0.8];
+    let r = ik.solve(far, quat);
+    for (let i = 0; i < 20; i++) r = ik.solve(far, quat);
     expect(r.reachable).toBe(false);
-    r.deg.forEach((d) => {
-      expect(d).toBeGreaterThanOrEqual(-45.001);
-      expect(d).toBeLessThanOrEqual(45.001);
+    r.deg.forEach((d, i) => {
+      expect(d).toBeGreaterThanOrEqual(model.limits[i].lower * DEG - 0.001);
+      expect(d).toBeLessThanOrEqual(model.limits[i].upper * DEG + 0.001);
     });
   });
 

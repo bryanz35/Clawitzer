@@ -9,7 +9,7 @@
 - **Status, MCU → phone, 10 Hz:** `S,<seq>,<state>,<j1>,…,<j5>*<crc8>`
   - `state` ∈ `HOMING | IDLE | ACTIVE | WATCHDOG | ESTOP`.
 - Angles are degrees with 1 decimal (`-0.0` is never sent).
-- Joint order: base yaw, elbow pitch, forearm roll, wrist pitch, gripper. Roll/pitch are logical coordinates mixed into two wrist servos; j5 is not wrist yaw.
+- Joint order: base yaw, elbow pitch, wrist pitch, wrist roll, gripper. Roll/pitch are logical coordinates mixed into two wrist servos; j5 is not wrist yaw.
 - Once referenced, status j2 is measured from the unwrapped motor-shaft encoder and saved reduction; the other joint angles are firmware setpoints, not measured feedback.
 - **`seq`** is a uint16 that wraps at 65536. "Newer" uses serial-number arithmetic: `0` is newer than `65535`. The MCU drops a non-increasing seq.
   - In a status line, `seq` is the **last command seq the MCU accepted**. That is the handshake: after opening the port, wait for a status line and continue from `seq + 1`. The MCU forgets its seq on reboot, so the first command after boot may carry any seq.

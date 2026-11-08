@@ -3,7 +3,7 @@ import { NUM_JOINTS } from "./constants";
 /** Quaternion, `[x, y, z, w]`. */
 export type Quat = [number, number, number, number];
 
-/** j1 base yaw, j2 elbow pitch, j3 forearm roll/j4 wrist pitch (differential), j5 gripper closed→open; degrees at the serial boundary and in these messages. */
+/** j1 base yaw, j2 elbow pitch, j3 wrist pitch/j4 wrist roll (differential), j5 gripper closed→open; degrees at the serial boundary and in these messages. */
 export type JointDeg = [number, number, number, number, number];
 
 export const ARM_STATES = ["HOMING", "IDLE", "ACTIVE", "WATCHDOG", "ESTOP"] as const;

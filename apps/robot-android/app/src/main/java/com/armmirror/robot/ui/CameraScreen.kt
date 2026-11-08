@@ -109,14 +109,13 @@ data class Joint(val id: String, val name: String, val min: Float, val max: Floa
     fun pct(deg: Double) = ((deg.toFloat() - min) / (max - min)).coerceIn(0f, 1f)
 }
 
-// TODO(open-item): joint limits. Mirrors the ±45° placeholders in hardware/urdf/arm.urdf (display only;
-// firmware enforces the real limits). Update when the URDF limits are final.
+// Mirrors the limits in hardware/urdf/arm.urdf (display only; firmware enforces the real limits).
 val JOINTS = listOf(
-    Joint("j1", "Base yaw", -45f, 45f),
-    Joint("j2", "Elbow pitch", -45f, 45f),
-    Joint("j3", "Forearm roll", -45f, 45f),
-    Joint("j4", "Wrist pitch", -45f, 45f),
-    Joint("j5", "Gripper", -45f, 45f),
+    Joint("j1", "Base yaw", -180f, 180f),
+    Joint("j2", "Elbow pitch", -90f, 20f),
+    Joint("j3", "Wrist pitch", -90f, 90f),
+    Joint("j4", "Wrist roll", -90f, 90f),
+    Joint("j5", "Gripper", -90f, 90f),
 )
 
 private val SHEET_W = 292.dp
