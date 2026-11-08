@@ -139,5 +139,6 @@ describe("message guards", () => {
     expect(isPanMsg({ t: "pan", seq: 3, deg: 180.5 })).toBe(false);
     expect(isPanMsg({ t: "pan", seq: 3, deg: -1 })).toBe(false);
     expect(isPanMsg({ t: "pan", seq: -1, deg: 90 })).toBe(false);
+    expect(isPanMsg({ t: "pan", seq: 65536, deg: 90 })).toBe(false);
   });
 });

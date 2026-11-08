@@ -4,7 +4,7 @@
 // edges sit inside the headset's view; a uniformly scaled pinhole image is still undistorted (just zoomed out).
 
 import { DataTexture, Group, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3, VideoTexture } from "three";
-import type { Quat } from "@arm-mirror/protocol";
+import { CAMERA_MAX_DEG, CAMERA_MIN_DEG, type Quat } from "@arm-mirror/protocol";
 import type { Pose } from "./tracking";
 
 export interface VideoPanelOptions {
@@ -39,6 +39,16 @@ function forward(q: Quat): [number, number, number] {
 export function headYawPitch(q: Quat): [number, number] {
   const f = forward(q);
   return [Math.atan2(-f[0], -f[2]), Math.asin(Math.max(-1, Math.min(1, f[1])))];
+}
+
+/**
+ * Pan servo command (90 = ahead) for a head yaw in degrees, moving at most `maxStepDeg` from `lastDeg`.
+ * The stand spans ±90°: past that the head is behind it, so hold the end nearest the last command
+ * instead of flipping ends where atan2 wraps at 180°.
+ */
+export function panCommandDeg(yawDeg: number, lastDeg: number, maxStepDeg: number, sign = 1): number {
+  const wanted = Math.abs(yawDeg) <= 90 ? 90 + sign * yawDeg : lastDeg >= 90 ? CAMERA_MAX_DEG : CAMERA_MIN_DEG;
+  return lastDeg + Math.max(-maxStepDeg, Math.min(maxStepDeg, wanted - lastDeg));
 }
 
 /**
@@ -101,6 +111,11 @@ export class VideoPanel {
    */
   calibrate(head: Quat, cam: Quat): void {
     this.yawOffset = headYawPitch(head)[0] - cameraYawPitch(cam)[0];
+  }
+
+  /** A new XR session has a new heading; recalibrate on its first frame with a camera pose. */
+  resetCalibration(): void {
+    this.yawOffset = null;
   }
 
   /** Per frame. Without a camera orientation the plane is head-locked (assumes the stand tracks the head). */

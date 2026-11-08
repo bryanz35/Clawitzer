@@ -32,7 +32,8 @@ class BenchIO final : public IO {
     configured = !ioFault;
     return configured;
   }
-  const char* error() const override { return ioFault ? "bench_fault" : ""; }
+  const char* faultText = "bench_fault";
+  const char* error() const override { return ioFault ? faultText : ""; }
   bool readEncoder(uint16_t& value) override {
     ++encoderReads;
     if (!(configuredMask & kStepperOutput) || !encoderOk) { ioFault = true; return false; }
@@ -120,6 +121,8 @@ void test_guarded_auto_reference_needs_the_recorded_home_angle() {
   CalibrationSession matched(matchedArm, matchedIO, matchedStore);
   matched.begin(0);
   TEST_ASSERT_TRUE(matched.normalReady());
+  // The encoder and step zero are taken at park, so the arm must start there too.
+  TEST_ASSERT_EQUAL_FLOAT(ARM_PARK_DEG[ElbowPitch], matchedArm.positionDeg()[ElbowPitch]);
 
   // Powered down, then stopped somewhere else: the guard must refuse to assume home.
   Arm movedArm; BenchIO movedIO; MemoryStore movedStore;
@@ -661,6 +664,19 @@ void test_explicit_wrist_arm_recovers_from_a_failed_full_encoder_setup() {
   TEST_ASSERT_FALSE(session.normalReady());
 }
 
+void test_status_fault_is_an_owned_reply_token() {
+  Arm arm; BenchIO io; MemoryStore store;
+  io.stepperOk = false;
+  io.faultText = "TMC UART config: ESP_ERR_INVALID_STATE";
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
+  TEST_ASSERT_FALSE(command(session, 2, "apply", 20));
+  // The IO clears its error on the next setup; the reported fault must not change or go empty.
+  io.ioFault = false;
+  TEST_ASSERT_TRUE(command(session, 3, "status", 30, ",fault,TMC_UART_config__ESP_ERR_INVALID_STATE,"));
+}
+
 void test_gripper_bench_rejects_pulses_past_measured_closed_and_open() {
   Arm arm; BenchIO io; MemoryStore store; store.present = false;
   io.encoderOk = io.stepperOk = false;
@@ -689,6 +705,7 @@ int main() {
   RUN_TEST(test_guarded_auto_reference_needs_the_recorded_home_angle);
   RUN_TEST(test_reference_records_home_angle_for_the_next_boot);
   RUN_TEST(test_gripper_bench_rejects_pulses_past_measured_closed_and_open);
+  RUN_TEST(test_status_fault_is_an_owned_reply_token);
   RUN_TEST(test_camera_is_independent_and_still_obeys_estop);
   RUN_TEST(test_bench_jogs_are_exclusive_bounded_and_lease_protected);
   RUN_TEST(test_arbitrary_jog_amounts_stay_inside_the_hard_window);

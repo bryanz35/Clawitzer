@@ -156,7 +156,9 @@ bool EspActuatorIO::release() {
     pwmTimerReady_ = false;
   }
   servoConfigured_ = 0;
-  stepReady_ = directionReady_ = estopReady_ = false;
+  stepReady_ = directionReady_ = false;
+  // The camera shares the e-stop input; a failed reconfigure must not leave it reading as pressed.
+  estopReady_ = cameraConfigured_;
   // Leave old EN actively HIGH until the new setup takes ownership of its pins.
   return true;
 }
@@ -496,7 +498,12 @@ bool EspActuatorIO::readEncoder(uint16_t& raw) {
   if (!spiFrame(as5047ReadCommand(0x3fff), previous) ||
       !spiFrame(0x0000, response)) return false;  // NOP clocks out ANGLECOM.
   // First return is stale by design; the requested angle alone is authoritative.
-  if (!as5047Decode(response, raw)) return fault("AS5047P parity/error flag");
+  if (!as5047Decode(response, raw)) {
+    // A corrupted frame is a glitch the session debounces, so don't latch a fault here.
+    // Reading ERRFL (0x0001, cleared on access) keeps a set error flag from persisting.
+    spiFrame(as5047ReadCommand(0x0001), previous);
+    return false;
+  }
   return true;
 }
 

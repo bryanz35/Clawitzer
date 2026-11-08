@@ -85,14 +85,20 @@ void Arm::update(uint32_t nowMs, float dtSec) {
     const float vmax = ARM_JOINT_MAX_VEL_DEG_S[i] * speedScale;
     const float amax = ARM_JOINT_MAX_ACCEL_DEG_S2[i];
     const float err = target_[i] - pos_[i];
+    const float brake = amax * dtSec;  // most velocity may change in one tick
+    const float lastVel = vel_[i];
 
-    // Fastest velocity that can still stop at the target under amax, capped at vmax.
-    const float vdes = copysignf(fminf(vmax, sqrtf(2.0f * amax * fabsf(err))), err);
-    vel_[i] += clampf(vdes - vel_[i], -amax * dtSec, amax * dtSec);
+    // Fastest velocity that, after this tick's own step, can still brake to the target under
+    // amax (discrete form of sqrt(2*amax*|err|)), capped at vmax.
+    const float stopVel = 0.5f * (sqrtf(brake * brake + 8.0f * amax * fabsf(err)) - brake);
+    const float vdes = copysignf(fminf(vmax, stopVel), err);
+    vel_[i] += clampf(vdes - vel_[i], -brake, brake);
     vel_[i] = clampf(vel_[i], -vmax, vmax);
 
     const float step = vel_[i] * dtSec;
-    if ((err >= 0.0f) == (step >= 0.0f) && fabsf(step) >= fabsf(err)) {
+    // Land on the target only if stopping there fits the accel budget. A target that comes back
+    // onto a joint too fast to stop is overshot under full braking, then approached again.
+    if ((err >= 0.0f) == (step >= 0.0f) && fabsf(step) >= fabsf(err) && fabsf(lastVel) <= brake) {
       pos_[i] = target_[i];
       vel_[i] = 0.0f;
     } else {

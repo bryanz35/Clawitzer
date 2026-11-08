@@ -79,6 +79,28 @@ void test_limits_clamp_position_and_velocity() {
   for (int i = 0; i < ARM_NUM_JOINTS; i++) TEST_ASSERT_EQUAL_FLOAT(ARM_JOINT_MAX_DEG[i], s.positionDeg()[i]);
 }
 
+void test_target_reversal_onto_a_moving_joint_stays_within_accel_limit() {
+  Arm s;
+  homeAt(s, 0.0f);
+  uint32_t t = run(s, 0, 1);
+  const int j = 1;  // elbow: the stepper loses steps on an instant stop
+  const float amax = ARM_JOINT_MAX_ACCEL_DEG_S2[j];
+  float target[ARM_NUM_JOINTS];
+  for (int i = 0; i < ARM_NUM_JOINTS; i++) target[i] = ARM_PARK_DEG[i];
+  target[j] = ARM_JOINT_MAX_DEG[j];
+  float last = s.positionDeg()[j], lastVel = 0.0f;
+  for (int k = 0; k < 400; k++) {
+    if (k == 60) target[j] = s.positionDeg()[j];  // at full speed, the target lands on the joint
+    TEST_ASSERT_TRUE(s.setJointAngles(target, static_cast<uint16_t>(k + 1), t));
+    s.update(t += 10, kDt);
+    const float vel = (s.positionDeg()[j] - last) / kDt;
+    TEST_ASSERT_TRUE(fabsf(vel - lastVel) <= amax * kDt * 1.01f);
+    last = s.positionDeg()[j];
+    lastVel = vel;
+  }
+  TEST_ASSERT_EQUAL_FLOAT(target[j], s.positionDeg()[j]);  // overshoots, then settles back
+}
+
 void test_estop_holds_then_rehomes() {
   Arm s;
   homeAt(s, 0.0f);
@@ -168,6 +190,7 @@ int main() {
   RUN_TEST(test_homing_ignores_commands_and_moves_slowly);
   RUN_TEST(test_watchdog_holds_after_200ms);
   RUN_TEST(test_limits_clamp_position_and_velocity);
+  RUN_TEST(test_target_reversal_onto_a_moving_joint_stays_within_accel_limit);
   RUN_TEST(test_estop_holds_then_rehomes);
   RUN_TEST(test_sequences_wrap_and_survive_estop_rehoming);
   RUN_TEST(test_invalid_target_does_not_consume_sequence_or_feed_watchdog);

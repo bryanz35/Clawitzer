@@ -48,6 +48,7 @@ class CalibrationSession {
   bool get(const calibration::Command& command, char* fields, size_t capacity) const;
   bool dispatch(const calibration::Command& command, uint32_t nowMs, char* fields, size_t capacity);
   void makeReply(uint16_t sequence, bool ok, const char* fields);
+  void setFault(const char* reason);
   const actuators::Config& activeConfig() const { return calibrating_ ? draft_ : config_; }
 
   Arm& arm_;
@@ -59,7 +60,8 @@ class CalibrationSession {
   bool validConfig_ = false, calibrating_ = false;
   uint8_t preparedMask_ = 0;
   bool referenced_ = false, faulted_ = false;
-  const char* fault_ = "none";
+  // Owned copy: an IO error buffer is cleared on reconfigure and may hold non-token text.
+  char fault_[48] = "none";
   bool haveSequence_ = false;
   uint16_t lastSequence_ = 0;
   bool haveCameraSequence_ = false;

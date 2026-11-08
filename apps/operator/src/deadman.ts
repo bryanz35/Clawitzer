@@ -60,6 +60,11 @@ export class Deadman {
     return this._state === "engaged";
   }
 
+  /** Drop any pinch without an event, e.g. when the XR session (and its reference space) ends. */
+  release(): void {
+    this._state = "released";
+  }
+
   /** Call once per XR frame. `nowMs` is the frame timestamp. */
   update(hand: HandSample | null, head: Pose | null, nowMs: number): DeadmanEvent {
     const wasEngaged = this._state === "engaged";

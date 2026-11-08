@@ -1,4 +1,4 @@
-import { CAMERA_MAX_DEG, CAMERA_MIN_DEG, NUM_JOINTS } from "./constants";
+import { CAMERA_MAX_DEG, CAMERA_MIN_DEG, NUM_JOINTS, SEQ_MODULUS } from "./constants";
 
 /** Quaternion, `[x, y, z, w]`. */
 export type Quat = [number, number, number, number];
@@ -125,7 +125,7 @@ function isFiniteNum(x: unknown): x is number {
 }
 
 function isSeq(x: unknown): x is number {
-  return Number.isInteger(x) && (x as number) >= 0;
+  return Number.isInteger(x) && (x as number) >= 0 && (x as number) < SEQ_MODULUS;
 }
 
 function isNumTuple(x: unknown, len: number): boolean {

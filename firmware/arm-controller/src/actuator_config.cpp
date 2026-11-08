@@ -264,7 +264,8 @@ bool validate(const Config& config, char* error, size_t capacity) {
   // (which are unreachable) are not enumerated. Other calibrations keep the rectangle.
   float sum = 0.0f;
   const bool coupled = diamondSum(config, sum);
-  WristPoint wrist[4] = {{sum, 0.0f}, {0.0f, sum}, {-sum, 0.0f}, {0.0f, -sum}};
+  // Four clips can turn the diamond into an octagon, so size for the clipped result.
+  WristPoint wrist[kMaxWristVertices] = {{sum, 0.0f}, {0.0f, sum}, {-sum, 0.0f}, {0.0f, -sum}};
   size_t vertices = 4;
   if (coupled) {
     vertices = clipHalfPlane(wrist, vertices, true, ARM_JOINT_MIN_DEG[WristRoll], true);

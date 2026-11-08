@@ -12,10 +12,9 @@
 
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
-  CAMERA_MAX_DEG,
-  CAMERA_MIN_DEG,
   CMD_HZ,
   nextSeq,
+  type ArmState,
   type CamOrientMsg,
   type ControlMsg,
   type JointDeg,
@@ -36,7 +35,7 @@ import { formatHead, formatJoints, Hud } from "./hud";
 import { ImuClient } from "./imu";
 import { OperatorLink, type LinkState } from "./link";
 import { readTracking } from "./tracking";
-import { headYawPitch, VideoPanel } from "./video";
+import { headYawPitch, panCommandDeg, VideoPanel } from "./video";
 
 const params = new URLSearchParams(location.search);
 const MOCK_ROBOT = params.get("mockRobot") === "1";
@@ -48,6 +47,11 @@ const STATUS_STALE_MS = 500;
 // Head yaw (CCW from above) → pan servo degrees, 90 = straight ahead.
 // TODO(open-item): servo direction and the 90° = forward horn alignment are unverified on the stand.
 const PAN_SIGN = 1;
+// Pan slew limit; firmware writes P lines straight to the servo. The sensor-driven crop absorbs the lag.
+// TODO(open-item): tune on the stand with the phone mounted.
+const PAN_MAX_DEG_S = 240;
+// The arm accepts commands only once homed; engaging against HOMING/ESTOP/no status would anchor IK to a guess.
+const ENGAGEABLE: readonly ArmState[] = ["IDLE", "ACTIVE", "WATCHDOG"];
 
 const statusEl = document.getElementById("status")!;
 const enterButton = document.getElementById("enter-vr") as HTMLButtonElement;
@@ -139,6 +143,7 @@ async function main(): Promise<void> {
   let linkState: LinkState | "mock" = MOCK_ROBOT ? "mock" : "signaling-down";
   let seq = 0;
   let panSeq = 0;
+  let panDeg = 90; // firmware's boot pan
   let lastSendMs = 0;
   let hint = "";
   let headQ: Quat | null = null;
@@ -171,9 +176,9 @@ async function main(): Promise<void> {
       // The pan stand follows the head regardless of the deadman; firmware still enforces range and e-stop.
       if (headQ) {
         const yawDeg = (headYawPitch(headQ)[0] * 180) / Math.PI;
-        const deg = Math.min(CAMERA_MAX_DEG, Math.max(CAMERA_MIN_DEG, 90 + PAN_SIGN * yawDeg));
+        panDeg = panCommandDeg(yawDeg, panDeg, PAN_MAX_DEG_S / CMD_HZ, PAN_SIGN);
         panSeq = nextSeq(panSeq);
-        const pan: PanMsg = { t: "pan", seq: panSeq, deg };
+        const pan: PanMsg = { t: "pan", seq: panSeq, deg: panDeg };
         link.send(pan);
       }
     } else {
@@ -188,13 +193,14 @@ async function main(): Promise<void> {
     if (frame && ref) {
       const s = readTracking(frame, ref, HAND);
       headQ = s.head?.orientation ?? null;
-      const event = deadman.update(s.hand, s.head, timeMs);
+      // No fresh status, or homing/e-stop (incl. a reset mid-pinch), releases the deadman and blocks engage.
+      const status = freshStatus();
+      const armReady = status !== null && ENGAGEABLE.includes(status.state);
+      const event = deadman.update(armReady ? s.hand : null, s.head, timeMs);
 
-      if (event === "engage") {
+      if (event === "engage" && status) {
         // Step-check the IK against where the arm really is, not where we last asked it to be.
-        // A stale status is not where the arm is; then keep the last accepted IK pose.
-        const status = freshStatus();
-        if (status) ik.setCurrent(status.deg);
+        ik.setCurrent(status.deg);
         // Hold where the arm is until IK runs; a stale `commanded` from an earlier session would drive it there.
         commanded = ik.deg;
         posFilter.forEach((f) => f.reset());
@@ -225,7 +231,8 @@ async function main(): Promise<void> {
         // Hold the last good pose (safety invariant 5).
         hint = anchored !== track ? "tracking mode changed: release and re-pinch" : "elbow not tracked: holding";
       } else {
-        hint = deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
+        hint = !armReady ? `arm not ready (${status?.state ?? "no status"})`
+          : deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
       }
 
       send(deadman.engaged, timeMs);
@@ -261,7 +268,13 @@ async function main(): Promise<void> {
     // Render at the headset's native resolution; Quest Browser's default framebuffer is smaller and softens the video.
     renderer.xr.setFramebufferScaleFactor(XRWebGLLayer.getNativeFramebufferScaleFactor?.(session) ?? 1);
     await renderer.xr.setSession(session);
-    session.addEventListener("end", () => (enterButton.textContent = "Enter VR"));
+    session.addEventListener("end", () => {
+      enterButton.textContent = "Enter VR";
+      // The next session has a new reference space: the clutch anchor and video heading don't carry over.
+      deadman.release();
+      lastIK = null;
+      video.resetCalibration();
+    });
     enterButton.textContent = "In VR";
   };
 }

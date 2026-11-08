@@ -31,6 +31,17 @@ bool numbers(const calibration::Command& command, size_t start, double* out, siz
   }
   return true;
 }
+// Copies `in` as one reply token: anything outside [A-Za-z0-9_.+-] becomes '_'. Returns its length.
+size_t token(char* out, size_t capacity, const char* in) {
+  size_t i = 0;
+  for (; in[i] && i + 1 < capacity; ++i) {
+    const char c = in[i];
+    out[i] = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+             (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '+' ? c : '_';
+  }
+  out[i] = '\0';
+  return i;
+}
 bool error(char* fields, size_t capacity, const char* code) {
   snprintf(fields, capacity, "%s", code);
   return false;
@@ -51,7 +62,7 @@ void CalibrationSession::begin(uint32_t nowMs) {
   validConfig_ = actuators::validate(config_, reason, sizeof reason);
   arm_.setWristCoupling(validConfig_ ? actuators::wristTiltSumDeg(config_) : 0.0f);
   preparedMask_ = 0;
-  fault_ = validConfig_ ? "reference_required" : "uncalibrated";
+  setFault(validConfig_ ? "reference_required" : "uncalibrated");
   // Guarded auto-reference: only the recorded marked-home shaft angle proves the elbow is
   // still at home. Anything else (for example a stop mid-motion) needs a manual reference.
   if (validConfig_ && config_.homeRaw >= 0 && config_.homeRaw < 16384) tryAutoReference(nowMs);
@@ -94,9 +105,9 @@ void CalibrationSession::tryAutoReference(uint32_t nowMs) {
   }
   io_.zeroStepPosition();
   faulted_ = false;
-  fault_ = "none";
+  setFault("none");
   arm_.setEstop(false, nowMs);
-  arm_.rehome(ARM_HOME_DEG, nowMs);
+  arm_.rehome(ARM_PARK_DEG, nowMs);
   referenced_ = true;
   io_.enableStepper(true);
   if (*io_.error()) fail("stepper_enable", nowMs);
@@ -123,10 +134,12 @@ void CalibrationSession::disarm() {
   referenced_ = false;
 }
 
+void CalibrationSession::setFault(const char* reason) { token(fault_, sizeof fault_, reason); }
+
 void CalibrationSession::fail(const char* reason, uint32_t nowMs) {
   disarm();
   faulted_ = true;
-  fault_ = reason;
+  setFault(reason);
   arm_.setEstop(true, nowMs);
 }
 
@@ -143,7 +156,7 @@ bool CalibrationSession::configure(const actuators::Config& config, uint8_t outp
   }
   preparedMask_ = outputMask;
   faulted_ = false;
-  fault_ = "none";
+  setFault("none");
   return true;
 }
 
@@ -301,7 +314,7 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     draft_ = config_;
     preparedMask_ = 0;
     faulted_ = false;
-    fault_ = "none";
+    setFault("none");
     return true;
   }
   if (is(verb, "reference") && cmd.argc == 1 && is(cmd.args[0], "HOME_MARK_CONFIRMED")) {
@@ -318,7 +331,7 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     if (!encoder_.referenced()) return error(fields, capacity, "encoder_reference");
     io_.zeroStepPosition();
     faulted_ = false;
-    fault_ = "none";
+    setFault("none");
     arm_.setEstop(false, nowMs);
     arm_.rehome(ARM_PARK_DEG, nowMs);
     referenced_ = true;
@@ -476,13 +489,7 @@ void CalibrationSession::makeReply(uint16_t sequence, bool ok, const char* field
   char code[proto::kMaxLineLen] = {};
   if (!ok) {
     // ERR carries one ASCII token; preserve validation diagnostics as readable error codes.
-    size_t i = 0;
-    for (; fields[i] && i + 1 < sizeof code; ++i) {
-      const char c = fields[i];
-      code[i] = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '+' ? c : '_';
-    }
-    if (i == 0) snprintf(code, sizeof code, "calibration_error");
+    if (!token(code, sizeof code, fields)) snprintf(code, sizeof code, "calibration_error");
   }
   replyLength_ = calibration::formatReply(reply_, sizeof reply_, sequence, ok, ok ? fields : code);
   if (!replyLength_) replyLength_ = calibration::formatReply(reply_, sizeof reply_, sequence, false, "response_overflow");
