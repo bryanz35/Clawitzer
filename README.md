@@ -160,8 +160,9 @@ manual path: align every axis to its home mark, tick the acknowledgement and use
 only needed when re-measuring, through the bench console and NVS. `Connect` only
 opens the port.
 
-Hold `Space` plus `Q`/`A`, `W`/`S`, `E`/`D`, `R`/`F`, `T`/`G` for base, elbow,
-wrist pitch, wrist roll and gripper; or hold a `−`/`+` button with the mouse
+Hold `Shift` plus `A`/`D` (base left/right), `W`/`S` (elbow up/down),
+`↑`/`↓` (wrist pitch up/down), `←`/`→` (wrist roll left/right) and `T`/`G`
+(gripper open/close); or hold a `−`/`+` button with the mouse
 (`Enter` works on a focused button). Releasing, pressing `Esc`, leaving the
 window or losing telemetry requests a hold at the latest reported pose and stops
 streaming. There is no automatic resume. The speed slider is a fraction of each

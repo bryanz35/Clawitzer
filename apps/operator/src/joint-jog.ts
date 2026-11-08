@@ -1,13 +1,23 @@
 import { CMD_HZ, NUM_JOINTS, type JointDeg } from "@arm-mirror/protocol";
 import { DEG, type JointLimits } from "@arm-mirror/kinematics";
 
+/**
+ * [positive, negative] key per joint: j1 base, j2 elbow, j3 wrist pitch, j4 wrist roll, j5 gripper.
+ * Positive j1 is CCW (left) from above, positive j2 and j3 are DOWN, positive j4 is CCW about the
+ * forearm, positive j5 is open. The modifier below must be held for any of these to act.
+ */
 export const JOINT_KEYS = [
-  ["KeyQ", "KeyA"], ["KeyW", "KeyS"], ["KeyE", "KeyD"],
-  ["KeyR", "KeyF"], ["KeyT", "KeyG"],
+  ["KeyA", "KeyD"],             // base:    A left, D right
+  ["KeyS", "KeyW"],             // elbow:   W up, S down
+  ["ArrowDown", "ArrowUp"],     // pitch:   Up up, Down down
+  ["ArrowRight", "ArrowLeft"],  // roll:    Right right, Left left
+  ["KeyT", "KeyG"],             // gripper: T open, G close
 ] as const;
 
 /** Joint names in protocol order (arm.urdf: j3 = wrist pitch, j4 = wrist roll). */
 export const JOINT_LABELS = ["Base yaw", "Elbow pitch", "Wrist pitch", "Wrist roll", "Gripper"] as const;
+
+const MODIFIER_CODES: Record<string, true> = { ShiftLeft: true, ShiftRight: true };
 
 const MAX_TICK_GAP_MS = 100;
 
@@ -58,11 +68,12 @@ export class JointJog {
   }
 
   key(code: string, down: boolean, repeat = false): boolean {
-    if (code !== "Space" && !JOINT_KEYS.some((pair) => pair[0] === code || pair[1] === code)) return false;
+    const modifier = MODIFIER_CODES[code] === true;
+    if (!modifier && !JOINT_KEYS.some((pair) => pair[0] === code || pair[1] === code)) return false;
     if (!down) {
       const wasMoving = this.hasIntent();
       this.keys.delete(code);
-      if (code === "Space") this.release();
+      if (modifier) this.release();
       else if (wasMoving && !this.hasIntent()) this.requestHold();
     } else if (this.permitted && !repeat) {
       this.keys.add(code);
@@ -114,7 +125,8 @@ export class JointJog {
 
   private direction(joint: number): number {
     const pair = JOINT_KEYS[joint];
-    let direction = this.keys.has("Space") ? Number(this.keys.has(pair[0])) - Number(this.keys.has(pair[1])) : 0;
+    const modifier = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    let direction = modifier ? Number(this.keys.has(pair[0])) - Number(this.keys.has(pair[1])) : 0;
     if (this.pointer?.joint === joint) direction += this.pointer.direction;
     return Math.min(1, Math.max(-1, direction));
   }

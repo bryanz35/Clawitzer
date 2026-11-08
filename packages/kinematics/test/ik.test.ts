@@ -13,7 +13,7 @@ describe("loadArm", () => {
     expect(arm.names).toEqual(["j1", "j2", "j3", "j4", "j5"]);
     expect(arm.restPose).toEqual([0, 0, 0, 0, 0]);
     expect(arm.limits[0]).toEqual({ lower: -3.1416, upper: 3.1416, velocity: 0.5, acceleration: 1 });
-    expect(arm.limits[1]).toMatchObject({ lower: -1.5708, upper: 0.349066 });
+    expect(arm.limits[1]).toMatchObject({ lower: -1.396263, upper: 0.523599 });
     expect(arm.baseLink).toBe("base_link");
     expect(arm.tipLink).toBe("tool");
   });

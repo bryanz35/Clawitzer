@@ -442,7 +442,7 @@ void test_encoder_tolerates_a_small_limit_overshoot_but_latches_a_real_one() {
   float extra = 0.0f;
   session.tick(now, 0.01f);  // Finish reference homing before commands are accepted.
   // Reach the limit with the encoder tracking the command exactly.
-  for (int i = 0; i < 200; i++) {
+  for (int i = 0; i < 450; i++) {  // park -75 to +30 is 105 deg, ~0.29 deg per tick.
     now += 10;
     TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
     io.raw = shaft(0.0f);

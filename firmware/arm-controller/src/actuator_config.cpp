@@ -71,8 +71,12 @@ bool mapChecked(const Config& config, const float* deg, Targets& result) {
   Targets next;
   for (size_t i = 0; i < kServoCount; ++i) {
     // Reject the coupled pose as a whole; independently clipping a wrist servo changes its kinematics.
-    if (!isfinite(pulse[i]) || pulse[i] < config.servo[i].minUs || pulse[i] > config.servo[i].maxUs) return false;
-    next.pulseUs[i] = static_cast<int32_t>(round(pulse[i]));
+    // Compare the value actually written: a pose on the calibrated diamond edge computes
+    // 2500.0001 us, which round() writes as 2500 and is therefore inside the window.
+    if (!isfinite(pulse[i])) return false;
+    const double rounded = round(pulse[i]);
+    if (rounded < config.servo[i].minUs || rounded > config.servo[i].maxUs) return false;
+    next.pulseUs[i] = static_cast<int32_t>(rounded);
   }
   const double steps = (static_cast<double>(deg[ElbowPitch]) - ARM_PARK_DEG[ElbowPitch]) *
                        stepScale(config) * config.motorDirection;
