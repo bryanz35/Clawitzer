@@ -55,8 +55,8 @@ clamps every solution to the joint limits and rejects any that jumps too far in 
 The gap between the thumb and index fingertips sets the gripper on its own.
 
 The page also draws the video panel and a status panel showing each joint's commanded and
-reported angle. Head yaw becomes the camera stand's pan angle, whether or not the fist is
-held.
+reported angle. Head yaw, minus the base rotation the stand rides on, becomes the camera
+stand's pan angle, whether or not the fist is held.
 
 ### Phone app (`apps/robot-android`)
 

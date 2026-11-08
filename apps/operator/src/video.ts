@@ -42,12 +42,13 @@ export function headYawPitch(q: Quat): [number, number] {
 }
 
 /**
- * Pan servo command (90 = ahead) for a head yaw in degrees, moving at most `maxStepDeg` from `lastDeg`.
- * The stand spans ±90°: past that the head is behind it, so hold the end nearest the last command
- * instead of flipping ends where atan2 wraps at 180°.
+ * Pan servo command (90 = ahead) for a yaw in degrees relative to the arm base (the stand rides j1),
+ * moving at most `maxStepDeg` from `lastDeg`. The stand spans ±90°: past that the head is behind it,
+ * so hold the end nearest the last command instead of flipping ends where the yaw wraps at 180°.
  */
 export function panCommandDeg(yawDeg: number, lastDeg: number, maxStepDeg: number, sign = 1): number {
-  const wanted = Math.abs(yawDeg) <= 90 ? 90 + sign * yawDeg : lastDeg >= 90 ? CAMERA_MAX_DEG : CAMERA_MIN_DEG;
+  const y = ((((yawDeg + 180) % 360) + 360) % 360) - 180;
+  const wanted = Math.abs(y) <= 90 ? 90 + sign * y : lastDeg >= 90 ? CAMERA_MAX_DEG : CAMERA_MIN_DEG;
   return lastDeg + Math.max(-maxStepDeg, Math.min(maxStepDeg, wanted - lastDeg));
 }
 
@@ -59,6 +60,17 @@ export function panCommandDeg(yawDeg: number, lastDeg: number, maxStepDeg: numbe
 export function cameraYawPitch(q: Quat): [number, number] {
   const f = forward(q);
   return [Math.atan2(-f[0], f[1]), Math.asin(Math.max(-1, Math.min(1, f[2])))];
+}
+
+/**
+ * Heading offset (XR yaw − camera yaw) eased `gain` of the way toward centering the panel on `standYaw`,
+ * the XR-frame yaw the settled stand was commanded to. Null (uncalibrated) snaps. Wraps at ±π.
+ */
+export function recenterOffset(offset: number | null, standYaw: number, camYaw: number, gain: number): number {
+  const target = standYaw - camYaw;
+  if (offset === null) return target;
+  const d = target - offset;
+  return offset + gain * Math.atan2(Math.sin(d), Math.cos(d));
 }
 
 /** Alpha mask: opaque middle, smoothstep fade over `feather` of each edge. */
@@ -106,27 +118,27 @@ export class VideoPanel {
   }
 
   /**
-   * Re-zero the heading offset between the XR frame and the phone's world frame. Call while the operator
-   * looks at what the camera is pointing at (e.g. when the stream starts, or a "recenter" input).
+   * Re-zero the heading offset between the XR frame and the phone's world frame so the panel centers on
+   * `standYaw`. Call every frame while the stand has settled there: a one-shot zero drifts with the
+   * gyro-only heading and keeps any error from the moment it was taken (head moving, pan trim changed).
    */
-  calibrate(head: Quat, cam: Quat): void {
-    this.yawOffset = headYawPitch(head)[0] - cameraYawPitch(cam)[0];
+  recenter(cam: Quat, standYaw: number, gain: number): void {
+    this.yawOffset = recenterOffset(this.yawOffset, standYaw, cameraYawPitch(cam)[0], gain);
   }
 
-  /** A new XR session has a new heading; recalibrate on its first frame with a camera pose. */
+  /** A new XR session has a new heading; head-lock until the next recenter. */
   resetCalibration(): void {
     this.yawOffset = null;
   }
 
-  /** Per frame. Without a camera orientation the plane is head-locked (assumes the stand tracks the head). */
+  /** Per frame. Head-locked until the first recenter, or without a camera orientation. */
   update(head: Pose | null, cam: Quat | null): void {
     if (!head) return;
     this.object.position.set(...head.position);
     let yaw: number, pitch: number;
-    if (cam) {
-      if (this.yawOffset === null) this.calibrate(head.orientation, cam);
+    if (cam && this.yawOffset !== null) {
       [yaw, pitch] = cameraYawPitch(cam);
-      yaw += this.yawOffset ?? 0;
+      yaw += this.yawOffset;
     } else {
       [yaw, pitch] = headYawPitch(head.orientation);
     }

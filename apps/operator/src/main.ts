@@ -43,15 +43,20 @@ const SIGNAL_URL = params.get("signal") ?? `ws://${location.hostname}:8080/signa
 
 // A status older than this (10 Hz nominal) means the phone or arm link is down.
 const STATUS_STALE_MS = 500;
-// Head yaw (CCW from above) → pan servo degrees, 90 = straight ahead.
+// Head yaw (CCW from above) relative to the base j1 → pan servo degrees, 90 = straight ahead.
+// j1 turns about arm +Z = XR +Y with arm +X = XR −Z, so +j1 is CCW from above like XR yaw; j1 = 0 faces XR yaw 0.
 // TODO(open-item): servo direction and the 90° = forward horn alignment are unverified on the stand.
 const PAN_SIGN = 1;
 // Pan slew limit; firmware writes P lines straight to the servo. The sensor-driven crop absorbs the lag.
 // TODO(open-item): tune on the stand with the phone mounted.
 const PAN_MAX_DEG_S = 240;
-// The video heading is calibrated assuming the stand points where the head does. The stand starts
-// wherever the last session left it, so keep the panel head-locked until it has caught up.
+// The video heading is re-zeroed while the stand sits where it was commanded: the pan command and the
+// reported base j1 have held within PAN_STEADY_DEG this long (the servos have caught up; the stand also
+// starts wherever the last session left it, so the panel stays head-locked until the first settle).
 const PAN_SETTLE_MS = 1000;
+const PAN_STEADY_DEG = 1;
+// Per-frame share of the heading error removed while settled: ~0.25 s to center at 72–90 Hz.
+const RECENTER_GAIN = 0.05;
 // The arm accepts commands only once homed; engaging against HOMING/ESTOP/no status would anchor IK to a guess.
 const ENGAGEABLE: readonly ArmState[] = ["IDLE", "ACTIVE", "WATCHDOG"];
 
@@ -149,8 +154,12 @@ async function main(): Promise<void> {
   let linkState: LinkState | "mock" = MOCK_ROBOT ? "mock" : "signaling-down";
   let seq = 0;
   let panSeq = 0;
-  /** When this XR session's first pan command went out; null until then. */
-  let panSinceMs: number | null = null;
+  /** When the pan command or base j1 last moved more than PAN_STEADY_DEG (or this XR session's first send); null until then. */
+  let panMovedMs: number | null = null;
+  let panAnchorDeg = 90;
+  let baseAnchorDeg = 0;
+  /** World (XR) yaw the stand is commanded to: base j1 + pan. */
+  let standYawDeg = 0;
   let panDeg = 90; // firmware's boot pan
   let lastSendMs = 0;
   let hint = "";
@@ -183,11 +192,20 @@ async function main(): Promise<void> {
       link.send(msg);
       // The pan stand follows the head regardless of the deadman; firmware still enforces range and e-stop.
       if (headQ) {
+        // Counter-rotate the base so the camera tracks the head in the world. Reported j1, not commanded:
+        // the arm holds wherever it is while disengaged, and status is the truth after a reset.
+        const baseDeg = lastStatus?.deg[0] ?? 0;
         const yawDeg = (headYawPitch(headQ)[0] * 180) / Math.PI;
-        panDeg = panCommandDeg(yawDeg, panDeg, PAN_MAX_DEG_S / CMD_HZ, PAN_SIGN);
+        panDeg = panCommandDeg(yawDeg - baseDeg, panDeg, PAN_MAX_DEG_S / CMD_HZ, PAN_SIGN);
+        standYawDeg = baseDeg + (panDeg - 90) * PAN_SIGN;
         panSeq = nextSeq(panSeq);
         const pan: PanMsg = { t: "pan", seq: panSeq, deg: panDeg };
-        if (link.send(pan)) panSinceMs ??= nowMs;
+        const moved = Math.abs(panDeg - panAnchorDeg) > PAN_STEADY_DEG || Math.abs(baseDeg - baseAnchorDeg) > PAN_STEADY_DEG;
+        if (link.send(pan) && (panMovedMs === null || moved)) {
+          panAnchorDeg = panDeg;
+          baseAnchorDeg = baseDeg;
+          panMovedMs = nowMs;
+        }
       }
     } else {
       lastStatus = { t: "status", seq, state: engaged ? "ACTIVE" : "IDLE", deg: commanded }; // mockRobot echo
@@ -252,8 +270,10 @@ async function main(): Promise<void> {
       commanded[GRIPPER] = gripDeg;
 
       send(deadman.engaged, timeMs);
-      const panSettled = panSinceMs !== null && timeMs - panSinceMs >= PAN_SETTLE_MS;
-      video.update(s.head, panSettled ? camOrient?.q ?? null : null);
+      // E-stop or a dead MCU link leaves the stand short of the command; don't center the panel on it then.
+      const panSettled = panMovedMs !== null && timeMs - panMovedMs >= PAN_SETTLE_MS && status !== null && status.state !== "ESTOP";
+      if (panSettled && camOrient) video.recenter(camOrient.q, (standYawDeg * Math.PI) / 180, RECENTER_GAIN);
+      video.update(s.head, camOrient?.q ?? null);
     } else if (MOCK_ROBOT) {
       send(false, timeMs);
     }
@@ -291,7 +311,7 @@ async function main(): Promise<void> {
       deadman.release();
       lastIK = null;
       video.resetCalibration();
-      panSinceMs = null;
+      panMovedMs = null;
     });
     enterButton.textContent = "In VR";
   };

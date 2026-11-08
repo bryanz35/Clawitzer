@@ -86,7 +86,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 **WebRTC data channel (Quest ↔ phone):** JSON with a `t` discriminator.
 - `joints`: `{seq, deg[5], engaged}`
-- `pan`: `{seq, deg}` camera servo 0–180°, from head yaw; not deadman-gated. Phone → serial `P` line.
+- `pan`: `{seq, deg}` camera servo 0–180°, from head yaw minus base j1 (the stand rides the base); not deadman-gated. Phone → serial `P` line.
 - `camOrient`: `{q, ts}`
 - `debug`: `{on}` (phone app's debug switch → in-VR arm model; resent 1 Hz)
 - `track`: `{mode: "hand" | "elbow"}` (phone app's hand-tracking choice; resent 1 Hz)

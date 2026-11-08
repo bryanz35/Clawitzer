@@ -5,7 +5,7 @@ Native Android app that runs on the phone on the pan/tilt stand. It replaces the
 - Serves the operator page on `http://<phone-ip>:8080/operator/` and the signaling WebSocket on `/signal?role=operator`.
 - Answers the operator's WebRTC offer and sends the camera plus `camOrient` (~60 Hz) and `status` (10 Hz).
 - Relays `joints` to the NodeMCU-32S over USB serial (CP210x/CH340 bridge), **only while `engaged`**. The firmware watchdog holds the arm otherwise.
-- Relays `pan` (head yaw) as serial `P` lines to the camera servo; not deadman-gated.
+- Relays `pan` (head yaw minus base j1) as serial `P` lines to the camera servo; not deadman-gated.
 - **Reference arm** (shown while the MCU reports `HOMING`): after the user confirms every axis is on its home mark, sends the calibration `status` + `reference,HOME_MARK_CONFIRMED` requests. Required after every boot, reset or e-stop before the arm accepts joints.
 - **Hold to return to home marks** (shown once referenced: `IDLE`/`ACTIVE`/`WATCHDOG`): hold-to-run like the laptop jogs. While held, the phone sends the park pose (`generated/ArmConfig.kt`, from the URDF) at 50 Hz and mutes the VR relay; the firmware ramps there under its own limits. Release stops the stream and the firmware watchdog brakes. Park the arm this way before powering off so the next boot can auto-reference. It cannot move an unreferenced (`HOMING`) arm.
 

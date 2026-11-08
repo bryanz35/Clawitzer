@@ -43,6 +43,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -452,6 +454,12 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
             }
             SwitchRow("Mock MCU", robot.mock.value, robot::setMock)
             SwitchRow("Debug arm model in VR", robot.debug.value, robot::setDebug)
+            // Trims the stand so 90° from the operator points straight ahead; applies on the next pan message.
+            Text("Pan offset  %+.0f°".format(Locale.ROOT, robot.panOffset.floatValue), color = Cz.N700)
+            Slider(
+                robot.panOffset.floatValue, robot::setPanOffset, valueRange = -30f..30f, steps = 59,
+                colors = SliderDefaults.colors(thumbColor = Cz.A600, activeTrackColor = Cz.A600, inactiveTrackColor = Cz.N300),
+            )
             // Operator hand mapping, for comparing them. Takes effect at the operator's next pinch.
             Text("Hand tracking", color = Cz.N700)
             FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -20,6 +20,8 @@ import com.armmirror.robot.arm.UsbArmLink
 import com.armmirror.robot.generated.ARM_PARK_DEG
 import com.armmirror.robot.hub.HUB_PORT
 import com.armmirror.robot.hub.Hub
+import com.armmirror.robot.protocol.CAMERA_MAX_DEG
+import com.armmirror.robot.protocol.CAMERA_MIN_DEG
 import com.armmirror.robot.protocol.CMD_HZ
 import com.armmirror.robot.protocol.Status
 import com.armmirror.robot.protocol.camOrientJson
@@ -68,6 +70,9 @@ class RobotApp(private val ctx: Application) {
     val log = mutableStateListOf<String>()
     /** A marked-home reference request is in flight. */
     val referencing = mutableStateOf(false)
+    private val prefs = ctx.getSharedPreferences("robot", Application.MODE_PRIVATE)
+    /** Pan-stand trim in degrees, added to every operator pan target; persisted. */
+    val panOffset = mutableFloatStateOf(prefs.getFloat("panOffset", 0f))
     /** The Return-home button is held. */
     val returningHome = mutableStateOf(false)
     val operatorUrls: List<String> = lanAddresses().map { "http://$it:$HUB_PORT/operator/" }
@@ -94,7 +99,9 @@ class RobotApp(private val ctx: Application) {
     @Volatile private var homeTimer: Timer? = null
 
     // Relay rule: joints reach serial ONLY when engaged (see Relay). Muted while Return home is held.
-    private val relay = Relay(send = { if (homeTimer == null) armLink.sendJoints(it) }, sendPan = { armLink.sendCamera(it) })
+    private val relay = Relay(send = { if (homeTimer == null) armLink.sendJoints(it) }, sendPan = {
+        armLink.sendCamera((it + panOffset.floatValue).coerceIn(CAMERA_MIN_DEG, CAMERA_MAX_DEG))
+    })
     private var stopOrientation: (() -> Unit)? = null
 
     init {
@@ -185,6 +192,11 @@ class RobotApp(private val ctx: Application) {
     fun setDebug(on: Boolean) {
         debug.value = on
         peer.send(debugJson(on))
+    }
+
+    fun setPanOffset(deg: Float) {
+        panOffset.floatValue = deg
+        prefs.edit().putFloat("panOffset", deg).apply()
     }
 
     fun setTrack(mode: String) {

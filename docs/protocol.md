@@ -60,7 +60,7 @@ JSON with a `t` discriminator. The channel is unordered with `maxRetransmits: 0`
 | `t` | direction | fields |
 |---|---|---|
 | `joints` | Quest → phone | `seq`, `deg[5]`, `engaged`. The phone forwards to serial only when `engaged`. |
-| `pan` | Quest → phone | `seq`, `deg` (camera servo `[0,180]`, 90 = straight ahead, from head yaw). Not deadman-gated; the phone forwards it as a serial `P` line. |
+| `pan` | Quest → phone | `seq`, `deg` (camera servo `[0,180]`, 90 = straight ahead, from head yaw minus base j1 since the stand rides the base). Not deadman-gated; the phone forwards it as a serial `P` line. |
 | `camOrient` | phone → Quest | `q` (phone orientation, `[x,y,z,w]`, device frame relative to a z-up world frame, arbitrary heading, no compass), `ts` (sender epoch ms; clocks are not synced) |
 | `status` | phone → Quest | `seq`, `state`, `deg[5]`: the serial status line as JSON |
 | `debug` | phone → Quest | `on`: the app's debug switch (show the in-VR arm model). Resent every second, since the channel drops. |
