@@ -35,9 +35,9 @@ bool stepRangeValid(const Config& config) {
   if (!isfinite(scale) || scale <= 0 ||
       scale * ARM_JOINT_MAX_VEL_DEG_S[ElbowPitch] > 20000.0) return false;
   const float limits[] = {ARM_JOINT_MIN_DEG[ElbowPitch], ARM_JOINT_MAX_DEG[ElbowPitch],
-                          ARM_HOME_DEG[ElbowPitch]};
+                          ARM_HOME_DEG[ElbowPitch], ARM_PARK_DEG[ElbowPitch]};
   for (float limit : limits) {
-    const double magnitude = fabs((static_cast<double>(limit) - ARM_HOME_DEG[ElbowPitch]) * scale);
+    const double magnitude = fabs((static_cast<double>(limit) - ARM_PARK_DEG[ElbowPitch]) * scale);
     // Both motor directions must remain representable, including rounding to a microstep.
     if (!isfinite(magnitude) || magnitude > static_cast<double>(INT32_MAX) - 0.5) return false;
   }
@@ -74,7 +74,7 @@ bool mapChecked(const Config& config, const float* deg, Targets& result) {
     if (!isfinite(pulse[i]) || pulse[i] < config.servo[i].minUs || pulse[i] > config.servo[i].maxUs) return false;
     next.pulseUs[i] = static_cast<int32_t>(round(pulse[i]));
   }
-  const double steps = (static_cast<double>(deg[ElbowPitch]) - ARM_HOME_DEG[ElbowPitch]) *
+  const double steps = (static_cast<double>(deg[ElbowPitch]) - ARM_PARK_DEG[ElbowPitch]) *
                        stepScale(config) * config.motorDirection;
   if (!isfinite(steps)) return false;
   const double rounded = round(steps);

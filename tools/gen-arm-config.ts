@@ -30,6 +30,7 @@ static const float ARM_JOINT_MAX_DEG[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.upp
 static const float ARM_JOINT_MAX_VEL_DEG_S[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.velocity))}};
 static const float ARM_JOINT_MAX_ACCEL_DEG_S2[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.acceleration))}};
 static const float ARM_HOME_DEG[ARM_NUM_JOINTS] = {${f(model.restPose)}};
+static const float ARM_PARK_DEG[ARM_NUM_JOINTS] = {${f(model.parkPose)}};
 `;
   writeFileSync(OUT_PATH, header);
   console.log(`wrote ${OUT_PATH} (${n} joints: ${model.names.join(", ")})`);

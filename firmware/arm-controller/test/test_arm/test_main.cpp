@@ -16,7 +16,7 @@ static uint32_t run(Arm& s, uint32_t t, int ticks) {
 
 static void homeAt(Arm& s, float offsetDeg) {
   float start[ARM_NUM_JOINTS];
-  for (int i = 0; i < ARM_NUM_JOINTS; i++) start[i] = ARM_HOME_DEG[i] + offsetDeg;
+  for (int i = 0; i < ARM_NUM_JOINTS; i++) start[i] = ARM_PARK_DEG[i] + offsetDeg;
   s.begin(start, 0);
 }
 
@@ -125,7 +125,7 @@ void test_invalid_target_does_not_consume_sequence_or_feed_watchdog() {
   TEST_ASSERT_EQUAL_UINT16(7, arm.lastSeq());
   arm.update(221, kDt);
   TEST_ASSERT_EQUAL(ArmState::Watchdog, arm.state());
-  for (int i = 0; i < ARM_NUM_JOINTS; i++) TEST_ASSERT_EQUAL_FLOAT(ARM_HOME_DEG[i], arm.positionDeg()[i]);
+  for (int i = 0; i < ARM_NUM_JOINTS; i++) TEST_ASSERT_EQUAL_FLOAT(ARM_PARK_DEG[i], arm.positionDeg()[i]);
   target[ARM_NUM_JOINTS - 1] = INFINITY;
   TEST_ASSERT_FALSE(arm.setJointAngles(target, 8, 230));
   target[ARM_NUM_JOINTS - 1] = 0.0f;

@@ -178,7 +178,7 @@ void test_stepper_scaling_is_measured_gearing_not_a_fixed_ratio() {
   }
   config = calibrated();
   float deg[ARM_NUM_JOINTS] = {};
-  deg[ElbowPitch] = ARM_HOME_DEG[ElbowPitch] + 9;
+  deg[ElbowPitch] = ARM_PARK_DEG[ElbowPitch] + 9;
   Targets target;
   TEST_ASSERT_TRUE(map(config, deg, target));
   TEST_ASSERT_EQUAL_INT32(680, target.steps);
@@ -192,7 +192,7 @@ void test_stepper_scaling_is_measured_gearing_not_a_fixed_ratio() {
   config.motorStepsPerRev = 400;
   TEST_ASSERT_TRUE(map(config, deg, target));
   TEST_ASSERT_EQUAL_INT32(-1040, target.steps);
-  TEST_ASSERT_TRUE(map(config, ARM_HOME_DEG, target));
+  TEST_ASSERT_TRUE(map(config, ARM_PARK_DEG, target));
   TEST_ASSERT_EQUAL_INT32(0, target.steps);
   config.gearRatio = 1000;
   assertSetupRejected(config);  // Generated elbow velocity would require >20k steps/s.
@@ -359,7 +359,7 @@ void test_compiled_board_ships_calibrated_and_raw_bench_ignores_mapping() {
   TEST_ASSERT_EQUAL_UINT32(4, config.microsteps);
   TEST_ASSERT_EQUAL_FLOAT(200, config.motorStepsPerRev);
   TEST_ASSERT_EQUAL_INT32(1, config.motorDirection);
-  TEST_ASSERT_EQUAL_INT32(1, config.encoderDirection);
+  TEST_ASSERT_EQUAL_INT32(-1, config.encoderDirection);  // Counts rise as the elbow goes up.
   TEST_ASSERT_EQUAL_FLOAT(1700, config.currentMa);
   TEST_ASSERT_EQUAL_FLOAT(0.11f, config.senseResistorOhm);
   TEST_ASSERT_EQUAL_FLOAT(2, config.followingErrorDeg);

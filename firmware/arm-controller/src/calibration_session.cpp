@@ -39,7 +39,7 @@ bool error(char* fields, size_t capacity, const char* code) {
 
 void CalibrationSession::begin(uint32_t nowMs) {
   io_.disableOutputs();
-  arm_.begin(ARM_HOME_DEG, nowMs);
+  arm_.begin(ARM_PARK_DEG, nowMs);
   config_ = board_;
   actuators::Config loaded = board_;
   if (store_.load(loaded)) {
@@ -87,7 +87,7 @@ void CalibrationSession::tryAutoReference(uint32_t nowMs) {
     io_.disableOutputs();
     return;
   }
-  encoder_.reference(ARM_HOME_DEG[actuators::ElbowPitch], config_);
+  encoder_.reference(ARM_PARK_DEG[actuators::ElbowPitch], config_);
   if (!encoder_.referenced()) {
     io_.disableOutputs();
     return;
@@ -310,13 +310,13 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     encoder_.reset();
     encoderTimed_ = false;
     if (!readEncoderSample(nowMs)) { fail("encoder", nowMs); return error(fields, capacity, "encoder"); }
-    encoder_.reference(ARM_HOME_DEG[actuators::ElbowPitch], config_);
+    encoder_.reference(ARM_PARK_DEG[actuators::ElbowPitch], config_);
     if (!encoder_.referenced()) return error(fields, capacity, "encoder_reference");
     io_.zeroStepPosition();
     faulted_ = false;
     fault_ = "none";
     arm_.setEstop(false, nowMs);
-    arm_.rehome(ARM_HOME_DEG, nowMs);
+    arm_.rehome(ARM_PARK_DEG, nowMs);
     referenced_ = true;
     io_.enableStepper(true);
     if (*io_.error()) { fail("stepper_enable", nowMs); return error(fields, capacity, io_.error()); }

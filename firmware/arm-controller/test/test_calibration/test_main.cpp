@@ -402,7 +402,7 @@ void test_single_encoder_glitch_is_ignored_without_shifting_the_reference() {
   TEST_ASSERT_TRUE(session.normalReady());
   float reported[ARM_NUM_JOINTS] = {};
   session.reportedPosition(reported);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, reported[ElbowPitch]);  // Not integrated.
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, ARM_PARK_DEG[ElbowPitch], reported[ElbowPitch]);  // Not integrated.
   TEST_ASSERT_EQUAL(SerialController::Result::Accepted, joints(serial, 50));
 }
 
@@ -429,38 +429,39 @@ void test_encoder_tolerates_a_small_limit_overshoot_but_latches_a_real_one() {
   session.begin(0);
   TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
   const float degPerCount = 360.0f / (16384.0f * 21.0f);
-  // The AS5047P reports a 14-bit angle, so the simulated shaft must wrap at 16384.
-  const auto shaft = [&](int32_t extraCounts) {
-    const int64_t counts = 100 + lround(arm.positionDeg()[ElbowPitch] / degPerCount) + extraCounts;
+  // The AS5047P counts DOWN as the elbow angle rises and the reference sits at the park
+  // pose, so raw = 100 when measured == park.
+  const auto shaft = [&](float extraDeg) {
+    const int64_t counts = 100 + lround((ARM_PARK_DEG[ElbowPitch] - arm.positionDeg()[ElbowPitch] - extraDeg) / degPerCount);
     return static_cast<uint16_t>(((counts % 16384) + 16384) % 16384);
   };
   float target[ARM_NUM_JOINTS] = {};
   target[ElbowPitch] = ARM_JOINT_MAX_DEG[ElbowPitch];
   uint16_t seq = 2;
   uint32_t now = 20;
-  int32_t extra = 0;
+  float extra = 0.0f;
   session.tick(now, 0.01f);  // Finish reference homing before commands are accepted.
   // Reach the limit with the encoder tracking the command exactly.
-  for (int i = 0; i < 120; i++) {
+  for (int i = 0; i < 200; i++) {
     now += 10;
     TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
-    io.raw = shaft(0);
+    io.raw = shaft(0.0f);
     session.tick(now, 0.01f);
   }
   TEST_ASSERT_TRUE(session.normalReady());
   // Bumped ~3 deg past the limit: inside the margin, so no fault.
   for (int i = 0; i < 10; i++) {
     now += 10;
-    extra += 280;
+    extra += 0.28f;
     TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
     io.raw = shaft(extra);
     session.tick(now, 0.01f);
   }
   TEST_ASSERT_TRUE(session.normalReady());
   // Keep going past the margin: a real excursion still latches after the debounce.
-  for (int i = 0; i < 20 && session.normalReady(); i++) {
+  for (int i = 0; i < 25 && session.normalReady(); i++) {
     now += 10;
-    extra += 400;
+    extra += 0.4f;
     TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
     io.raw = shaft(extra);
     session.tick(now, 0.01f);

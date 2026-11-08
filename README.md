@@ -151,7 +151,9 @@ calibration CLI before connecting.
 The firmware ships with the measured calibration compiled in, so a fresh flash
 already reports `Saved / valid`. **Reference is automatic at power-up** when the
 motor-shaft encoder still reads the angle recorded at the last marked-home
-reference (the arm parked where it always starts). Anything else — a stop
+reference (the arm parked where it always starts). Boot homing targets the
+**park pose** — j2's is −75° (fully upright), while 0° remains straight — so
+power-up does not drive the elbow to straight. Anything else — a stop
 mid-motion, an e-stop or a fault that left the elbow elsewhere — keeps the
 manual path: align every axis to its home mark, tick the acknowledgement and use
 `Confirm reference & home`. The panel cannot create or save calibration; that is

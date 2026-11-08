@@ -32,6 +32,8 @@ export interface ArmModel {
   limits: JointLimits[];
   /** Home pose in radians, from <arm_mirror home>. */
   restPose: number[];
+  /** Pose the arm rests in at power-up, from <arm_mirror park> (defaults to home). */
+  parkPose: number[];
   /** Every joint (movable and fixed) in chain order. */
   chain: ChainJoint[];
   baseLink: string;
@@ -70,8 +72,9 @@ function num(attrs: Attrs | null, key: string, where: string): number {
 export function loadArm(urdfText: string): ArmModel {
   const text = urdfText.replace(/<!--[\s\S]*?-->/g, "");
   const chainJoints: ChainJoint[] = [];
-  const limitsByName = new Map<string, JointLimits>();
-  const homeByName = new Map<string, number>();
+  const limitsByName: Record<string, JointLimits> = {};
+  const homeByName: Record<string, number> = {};
+  const parkByName: Record<string, number> = {};
 
   // Self-closing <joint/> (e.g. inside <transmission>) is matched by the first branch and skipped.
   for (const m of text.matchAll(/<joint\b[^>]*?\/>|<joint\b([^>]*)>([\s\S]*?)<\/joint>/g)) {
@@ -120,8 +123,14 @@ export function loadArm(urdfText: string): ArmModel {
       }
       const home = num(extra, "home", `${where} <arm_mirror>`);
       if (home < lim.lower || home > lim.upper) throw new Error(`URDF: ${where} home is outside its limits`);
-      limitsByName.set(name, lim);
-      homeByName.set(name, home);
+      // Where the joint physically rests at power-up; unlike home, it need not be the zero pose.
+      const parkText = extra?.park;
+      const park = parkText === undefined ? home : Number(parkText);
+      if (!Number.isFinite(park)) throw new Error(`URDF: ${where} <arm_mirror> has a non-numeric "park"`);
+      if (park < lim.lower || park > lim.upper) throw new Error(`URDF: ${where} park is outside its limits`);
+      limitsByName[name] = lim;
+      homeByName[name] = home;
+      parkByName[name] = park;
     }
     chainJoints.push(joint);
   }
@@ -150,8 +159,9 @@ export function loadArm(urdfText: string): ArmModel {
   const movable = chain.filter((j) => j.type === "revolute");
   return {
     names: movable.map((j) => j.name),
-    limits: movable.map((j) => limitsByName.get(j.name)!),
-    restPose: movable.map((j) => homeByName.get(j.name)!),
+    limits: movable.map((j) => limitsByName[j.name]),
+    restPose: movable.map((j) => homeByName[j.name]),
+    parkPose: movable.map((j) => parkByName[j.name]),
     chain,
     baseLink: roots[0],
     tipLink: link,

@@ -68,7 +68,11 @@ inline Config boardConfig() {
   config.motorStepsPerRev = 200;
   config.microsteps = 4;
   config.motorDirection = 1;
-  config.encoderDirection = 1;
+  // The AS5047P counts increase when the forearm moves UP, i.e. towards negative j2
+  // (positive j2 is DOWN per arm.urdf). Observed 2026-11-07: arm at the top reported
+  // +10.6 deg, and jogging up drove the reading past the +20 deg limit. The motor sign
+  // is separately confirmed correct (positive steps move the forearm down).
+  config.encoderDirection = -1;
   config.currentMa = 1700;
   config.senseResistorOhm = 0.11f;
   config.followingErrorDeg = 2;

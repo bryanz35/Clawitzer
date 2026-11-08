@@ -180,7 +180,10 @@ Thus Δcounts = 76730, corresponding to 4.683227539 motor revolutions.
 The existing fitter gives 200.182458 effective full steps/rev at 1/4 stepping,
 consistent overall with nominal 200. User observed downward elbow motion,
 establishing motor direction +1 and encoder direction +1 under the existing
-positive-down convention; the reverse direction was later bench-tested and works.
+positive-down convention. **Encoder sign corrected later the same day (-1):** with the arm
+parked at the top the firmware reported +10.6 deg, and jogging up pushed the reading past
+the +20 deg limit, so counts rise as the elbow moves UP. The motor sign stands at +1
+(pressing the panel's "-" moves the forearm up, as the convention requires).
 
 The mechanical engineer reconfirmed **21:1** on 2026-11-07, and a bubble-level
 check agrees. `step 500` at 1/4 stepping (0.625 motor revolutions) moved the

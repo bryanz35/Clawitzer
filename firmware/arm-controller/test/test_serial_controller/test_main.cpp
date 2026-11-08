@@ -14,7 +14,8 @@ static SerialController::Result feed(SerialController& controller, const char* l
 
 void test_corrupt_and_replayed_frames_cannot_keep_arm_active() {
   Arm arm;
-  float start[ARM_NUM_JOINTS] = {};
+  float start[ARM_NUM_JOINTS];
+  for (int i = 0; i < ARM_NUM_JOINTS; i++) start[i] = ARM_PARK_DEG[i];
   arm.begin(start, 0);
   arm.update(10, 0.01f);
   SerialController controller(arm);
@@ -22,7 +23,7 @@ void test_corrupt_and_replayed_frames_cannot_keep_arm_active() {
   TEST_ASSERT_EQUAL(SerialController::Result::Accepted, feed(controller, valid, 10));
   arm.update(20, 0.01f);
   TEST_ASSERT_TRUE(arm.positionDeg()[0] > start[0]);
-  TEST_ASSERT_TRUE(arm.positionDeg()[1] < start[1]);
+  TEST_ASSERT_TRUE(arm.positionDeg()[1] > start[1]);  // park sits below the commanded elbow angle
   TEST_ASSERT_EQUAL(SerialController::Result::BadCrc,
                     feed(controller, "J,42,11.0,-20.5,0.0,45.0,-45.0*F6\n", 190));
   TEST_ASSERT_EQUAL(SerialController::Result::Ignored, feed(controller, valid, 200));

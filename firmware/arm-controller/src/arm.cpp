@@ -21,7 +21,7 @@ void Arm::begin(const float startDeg[ARM_NUM_JOINTS], uint32_t nowMs) {
   for (int i = 0; i < ARM_NUM_JOINTS; i++) {
     pos_[i] = clampf(startDeg[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
     vel_[i] = 0.0f;
-    target_[i] = clampf(ARM_HOME_DEG[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
+    target_[i] = clampf(ARM_PARK_DEG[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
   }
   clampWrist(pos_);
   clampWrist(target_);
@@ -100,7 +100,7 @@ void Arm::update(uint32_t nowMs, float dtSec) {
     }
     pos_[i] = clampf(pos_[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
 
-    if (fabsf(pos_[i] - ARM_HOME_DEG[i]) > kHomeToleranceDeg) atHome = false;
+    if (fabsf(pos_[i] - ARM_PARK_DEG[i]) > kHomeToleranceDeg) atHome = false;
   }
   clampWrist(pos_);
 

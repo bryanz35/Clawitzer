@@ -11,3 +11,4 @@ static const float ARM_JOINT_MAX_DEG[ARM_NUM_JOINTS] = {180.000f, 20.000f, 90.00
 static const float ARM_JOINT_MAX_VEL_DEG_S[ARM_NUM_JOINTS] = {28.648f, 28.648f, 28.648f, 28.648f, 28.648f};
 static const float ARM_JOINT_MAX_ACCEL_DEG_S2[ARM_NUM_JOINTS] = {57.296f, 57.296f, 57.296f, 57.296f, 57.296f};
 static const float ARM_HOME_DEG[ARM_NUM_JOINTS] = {0.000f, 0.000f, 0.000f, 0.000f, 0.000f};
+static const float ARM_PARK_DEG[ARM_NUM_JOINTS] = {0.000f, -75.000f, 0.000f, 0.000f, 0.000f};
