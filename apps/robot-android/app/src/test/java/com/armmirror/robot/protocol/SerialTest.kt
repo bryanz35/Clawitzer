@@ -22,6 +22,14 @@ class SerialTest {
         assertEquals(42 to deg, parseJoints(encodeJoints(42, deg)))
     }
 
+    @Test fun encodesAndParsesSharedCameraVectors() {
+        // Shared with packages/protocol/test/serial.test.ts.
+        assertEquals("P,7,90.5*AB\n", encodeCamera(7, 90.5))
+        assertEquals(CameraStatus(7, 90.5, true), parseCameraStatus("V,7,90.5,1*4A\n"))
+        assertNull(parseCameraStatus("V,7,90.5,1*4B\n"))
+        assertThrows(IllegalArgumentException::class.java) { encodeCamera(1, 180.5) }
+    }
+
     @Test fun roundsLikeToFixedAndNeverEmitsNegativeZero() {
         val line = encodeJoints(1, listOf(1.26, -0.04, 0.0, 0.0, 0.0))
         assertTrue(line, line.contains(",1.3,0.0,"))

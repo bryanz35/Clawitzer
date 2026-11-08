@@ -1,4 +1,4 @@
-import { NUM_JOINTS } from "./constants";
+import { CAMERA_MAX_DEG, CAMERA_MIN_DEG, NUM_JOINTS } from "./constants";
 
 /** Quaternion, `[x, y, z, w]`. */
 export type Quat = [number, number, number, number];
@@ -17,6 +17,16 @@ export interface JointsMsg {
   seq: number;
   deg: JointDeg;
   engaged: boolean;
+}
+
+/**
+ * Quest → phone. Camera pan stand target in camera-servo degrees (CAMERA_MIN_DEG–CAMERA_MAX_DEG,
+ * 90 = straight ahead). Not gated by the deadman; the phone forwards it as a serial `P` line.
+ */
+export interface PanMsg {
+  t: "pan";
+  seq: number;
+  deg: number;
 }
 
 /** Phone → Quest. Phone orientation (it rides the pan/tilt stand, so this is the camera pose). */
@@ -82,7 +92,7 @@ export interface PeerMsg {
   present: boolean;
 }
 
-export type ControlMsg = JointsMsg | CamOrientMsg | StatusMsg;
+export type ControlMsg = JointsMsg | PanMsg | CamOrientMsg | StatusMsg;
 export type SignalMsg = OfferMsg | AnswerMsg | IceMsg | PeerMsg;
 export type Message = ControlMsg | ImuMsg | SignalMsg;
 
@@ -120,6 +130,10 @@ export function isArmState(x: unknown): x is ArmState {
 
 export function isJointsMsg(x: unknown): x is JointsMsg {
   return isObj(x) && x.t === "joints" && isSeq(x.seq) && isJointDeg(x.deg) && typeof x.engaged === "boolean";
+}
+
+export function isPanMsg(x: unknown): x is PanMsg {
+  return isObj(x) && x.t === "pan" && isSeq(x.seq) && isFiniteNum(x.deg) && x.deg >= CAMERA_MIN_DEG && x.deg <= CAMERA_MAX_DEG;
 }
 
 export function isCamOrientMsg(x: unknown): x is CamOrientMsg {
@@ -161,7 +175,7 @@ export function isPeerMsg(x: unknown): x is PeerMsg {
 }
 
 export function isControlMsg(x: unknown): x is ControlMsg {
-  return isJointsMsg(x) || isCamOrientMsg(x) || isStatusMsg(x);
+  return isJointsMsg(x) || isPanMsg(x) || isCamOrientMsg(x) || isStatusMsg(x);
 }
 
 export function isSignalMsg(x: unknown): x is SignalMsg {

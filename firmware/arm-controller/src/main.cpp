@@ -20,6 +20,7 @@
 namespace {
 constexpr uint64_t kTickUs = 10000;
 constexpr uint32_t kStatusEveryTicks = 10;
+constexpr uint32_t kCameraHeartbeatTicks = 100;  // 1 Hz V line
 constexpr int kMaxBytesPerLoop = 256;
 SerialTransport serial;
 actuators::EspActuatorIO hardware;
@@ -78,6 +79,7 @@ extern "C" void app_main() {
   session.begin(millisNow());
   uint64_t lastTickUs = static_cast<uint64_t>(esp_timer_get_time());
   uint32_t tickCount = 0;
+  bool statusDue = false;
   char status[proto::kMaxLineLen + 8];
   for (;;) {
     serial.flush();
@@ -93,10 +95,13 @@ extern "C" void app_main() {
       lastTickUs += kTickUs;
       if (nowUs - lastTickUs > 5 * kTickUs) lastTickUs = nowUs;
       session.tick(millisNow(), kTickUs / 1e6f);
-      if (++tickCount % kStatusEveryTicks == 0 && !session.hasReply()) {
-        const size_t n = controller.formatStatus(status, sizeof status);
-        if (n > 0) serial.write(status, n);
-      }
+      if (++tickCount % kStatusEveryTicks == 0) statusDue = true;
+      if (tickCount % kCameraHeartbeatTicks == 0) session.requestCameraStatus();
+    }
+    // Deferred, not dropped, while a reply or camera line holds the transport.
+    if (statusDue && !session.hasReply()) {
+      const size_t n = controller.formatStatus(status, sizeof status);
+      if (n == 0 || serial.write(status, n)) statusDue = false;
     }
     vTaskDelay(1);
   }

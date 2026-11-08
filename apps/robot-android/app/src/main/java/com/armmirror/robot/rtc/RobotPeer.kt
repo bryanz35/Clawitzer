@@ -10,7 +10,9 @@ import com.armmirror.robot.protocol.Joints
 import com.armmirror.robot.protocol.Signal
 import com.armmirror.robot.protocol.answerJson
 import com.armmirror.robot.protocol.iceJson
+import com.armmirror.robot.protocol.Pan
 import com.armmirror.robot.protocol.parseJointsMsg
+import com.armmirror.robot.protocol.parsePanMsg
 import com.armmirror.robot.protocol.parseSignal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -81,6 +83,7 @@ private const val STATS_MS = 5_000L
 
 class RobotPeer(private val ctx: Context, private val signal: (String) -> Unit) {
     var onJoints: (Joints) -> Unit = {}
+    var onPan: (Pan) -> Unit = {}
     /** A new data channel opened (new operator session). Reset per-session state such as seq tracking. */
     var onChannelOpen: () -> Unit = {}
     var onState: (String) -> Unit = {}
@@ -264,7 +267,8 @@ class RobotPeer(private val ctx: Context, private val signal: (String) -> Unit) 
                 override fun onMessage(b: DataChannel.Buffer) {
                     if (b.binary) return
                     val bytes = ByteArray(b.data.remaining()).also { b.data.get(it) }
-                    parseJointsMsg(String(bytes))?.let(onJoints)
+                    val text = String(bytes)
+                    parseJointsMsg(text)?.let(onJoints) ?: parsePanMsg(text)?.let(onPan)
                 }
                 override fun onBufferedAmountChange(previous: Long) {}
             })

@@ -10,12 +10,15 @@
 
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
+  CAMERA_MAX_DEG,
+  CAMERA_MIN_DEG,
   CMD_HZ,
   nextSeq,
   type CamOrientMsg,
   type ControlMsg,
   type JointDeg,
   type JointsMsg,
+  type PanMsg,
   type Quat,
   type StatusMsg,
 } from "@arm-mirror/protocol";
@@ -27,7 +30,7 @@ import { formatHead, Hud } from "./hud";
 import { ImuClient } from "./imu";
 import { OperatorLink, type LinkState } from "./link";
 import { readTracking } from "./tracking";
-import { VideoPanel } from "./video";
+import { headYawPitch, VideoPanel } from "./video";
 
 const params = new URLSearchParams(location.search);
 const MOCK_ROBOT = params.get("mockRobot") === "1";
@@ -36,6 +39,11 @@ const SIGNAL_URL = params.get("signal") ?? `ws://${location.hostname}:8080/signa
 
 // Arm elbow→tool is 0.38 m, close to a human elbow→knuckle; tune per operator after first tests.
 const HAND_TO_ARM_SCALE = 1.0;
+// A status older than this (10 Hz nominal) means the phone or arm link is down.
+const STATUS_STALE_MS = 500;
+// Head yaw (CCW from above) → pan servo degrees, 90 = straight ahead.
+// TODO(open-item): servo direction and the 90° = forward horn alignment are unverified on the stand.
+const PAN_SIGN = 1;
 
 const statusEl = document.getElementById("status")!;
 const enterButton = document.getElementById("enter-vr") as HTMLButtonElement;
@@ -111,9 +119,12 @@ async function main(): Promise<void> {
   const quatFilter = new OneEuroQuatFilter();
   let commanded: JointDeg = ik.deg;
   let lastStatus: StatusMsg | null = null;
+  let lastStatusMs = -Infinity;
+  const freshStatus = (): StatusMsg | null => (performance.now() - lastStatusMs <= STATUS_STALE_MS ? lastStatus : null);
   let camOrient: CamOrientMsg | null = null;
   let linkState: LinkState | "mock" = MOCK_ROBOT ? "mock" : "signaling-down";
   let seq = 0;
+  let panSeq = 0;
   let lastSendMs = 0;
   let hint = "";
   let headQ: Quat | null = null;
@@ -123,7 +134,10 @@ async function main(): Promise<void> {
     link.onState = (s) => (linkState = s);
     link.onStream = (s) => video.setStream(s);
     link.onControl = (msg: ControlMsg) => {
-      if (msg.t === "status") lastStatus = msg;
+      if (msg.t === "status") {
+        lastStatus = msg;
+        lastStatusMs = performance.now();
+      }
       else if (msg.t === "camOrient") camOrient = msg;
     };
   }
@@ -136,8 +150,20 @@ async function main(): Promise<void> {
     lastSendMs = Math.max(lastSendMs + 1000 / CMD_HZ, nowMs - 1000 / CMD_HZ);
     seq = nextSeq(seq);
     const msg: JointsMsg = { t: "joints", seq, deg: commanded, engaged };
-    if (link) link.send(msg);
-    else lastStatus = { t: "status", seq, state: engaged ? "ACTIVE" : "IDLE", deg: commanded }; // mockRobot echo
+    if (link) {
+      link.send(msg);
+      // The pan stand follows the head regardless of the deadman; firmware still enforces range and e-stop.
+      if (headQ) {
+        const yawDeg = (headYawPitch(headQ)[0] * 180) / Math.PI;
+        const deg = Math.min(CAMERA_MAX_DEG, Math.max(CAMERA_MIN_DEG, 90 + PAN_SIGN * yawDeg));
+        panSeq = nextSeq(panSeq);
+        const pan: PanMsg = { t: "pan", seq: panSeq, deg };
+        link.send(pan);
+      }
+    } else {
+      lastStatus = { t: "status", seq, state: engaged ? "ACTIVE" : "IDLE", deg: commanded }; // mockRobot echo
+      lastStatusMs = performance.now();
+    }
   }
 
   // ── Per frame ────────────────────────────────────────────────────────────
@@ -150,7 +176,9 @@ async function main(): Promise<void> {
 
       if (event === "engage") {
         // Step-check the IK against where the arm really is, not where we last asked it to be.
-        if (lastStatus) ik.setCurrent(lastStatus.deg);
+        // A stale status is not where the arm is; then keep the last accepted IK pose.
+        const status = freshStatus();
+        if (status) ik.setCurrent(status.deg);
         // Hold where the arm is until IK runs; a stale `commanded` from an earlier session would drive it there.
         commanded = ik.deg;
         posFilter.forEach((f) => f.reset());
@@ -180,12 +208,9 @@ async function main(): Promise<void> {
       send(false, timeMs);
     }
 
-    // TODO(open-item): head yaw → pan stand. Pan only (180°, no tilt), one 25 kg servo on the arm
-    // ESP32; head pitch must come from the video crop. No stand message exists in packages/protocol yet.
-
     const lines = [
       ...formatHead(headQ),
-      `link: ${linkState}   deadman: ${deadman.state}   arm: ${lastStatus?.state ?? "?"}`,
+      `link: ${linkState}   deadman: ${deadman.state}   arm: ${freshStatus()?.state ?? (lastStatus ? "STALE (no status)" : "?")}`,
       `cmd: ${commanded.map((d) => d.toFixed(1)).join(" ")}`,
       imu ? `imu: ${imu.latest() ? "live" : "stale"}` : "",
       hint,

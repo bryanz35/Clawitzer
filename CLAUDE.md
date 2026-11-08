@@ -15,7 +15,7 @@
 - The user's **forearm and hand pose** drives four arm pose axes plus an independent gripper. The arm is human-like, with a fixed elbow at its base.
 - A native Android app on the phone serves the operator page, streams video to the Quest, and relays joint commands to the arm's microcontroller over USB.
 - Actual arm controller: **NodeMCU-32S / ESP-WROOM-32** (classic ESP32, not S3). DS3235 base, TMC2209 elbow + AS5047P motor-shaft encoder, differential MS62 wrist pair and MS62 gripper. Pins, e-stop polarity and hard pulse windows are code-owned in `board_config.h`; the serial console jogs the wrist directly and persists only discovered mappings.
-- No native USB on this board: UART0 (GPIO1/3) goes through its onboard USB-UART bridge (CP210x/CH340-style). The phone app's usb-serial-for-android prober supports those chips, but `device_filter.xml` only matches the Espressif VID, so attach won't auto-launch the app (use **Connect arm**). Untested on hardware; see README before wiring.
+- No native USB on this board: UART0 (GPIO1/3) goes through its onboard USB-UART bridge (CP210x/CH340-style). The phone app's usb-serial-for-android prober supports those chips, and `device_filter.xml` matches the CP210x and CH340 VIDs (unverified against the exact board). Untested on hardware; see README before wiring.
 - User-approved bench exception: unloaded/disconnected linkage, physical e-stop ready, explicit acknowledgement, isolated bounded jogs and 200 ms keepalive. Normal operation still enforces generated limits. Every boot/power loss/e-stop requires manual alignment of all axes to generated home marks and explicit encoder reference before homing.
 
 ## Architecture
@@ -89,6 +89,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 **WebRTC data channel (Quest ↔ phone):** JSON with a `t` discriminator.
 - `joints`: `{seq, deg[5], engaged}`
+- `pan`: `{seq, deg}` camera servo 0–180°, from head yaw; not deadman-gated. Phone → serial `P` line.
 - `camOrient`: `{q, ts}`
 - `status`: mirrors the serial status line.
 

@@ -282,17 +282,19 @@ Guided measurements use explicit integer pulse steps (no automatic sweep): two m
 angles, three independent measured roll/pitch poses for the differential matrix, and actual
 gripper closed/open positions. A separately confirmed short stepper jog compares emitted
 microsteps to encoder motion to estimate effective steps/revolution and direction.
-Raw `step N` accepts a nonzero signed 32-bit integer relative move at
-1000 microsteps/s. The user-approved unloaded bench exception has **no fixed
-microstep-count or motor-angle travel cap**. The delta and resulting counter
-must fit signed 32-bit; overlapping moves remain rejected. Large values can
-drive into a hard stop before an operator reacts: choose each finite move
-from known physical clearance, never from the numeric representation limit.
+Raw `step N` accepts a nonzero integer relative move at a fixed motor speed of
+62.5 full steps/s (about 19 RPM on a 200-step motor), i.e. `62.5 × microsteps`
+microsteps/s, the same at every microstep setting. One move may not exceed the
+generated elbow range in microsteps (computed from the draft gearing), else
+`ERR,step_bounds`; the resulting counter must fit signed 32-bit and overlapping
+moves remain rejected. A move within that cap can still reach a hard stop:
+choose each move from known physical clearance.
 For 1/4 microstepping, disarm, change only the second `set stepper` value to
 `4`, and re-arm to program the TMC2209; retain the established current, sense
 resistance and other mapping values. At 200 full steps/rev and 21:1 reduction,
-this gives about 21.43°/s at the elbow; `step 1000` takes about 1 second and
-moves about 21.43°. Microstepping does not increase maximum motor torque.
+bench jogs move the elbow about 5.4°/s at any microstep setting; at 1/4,
+`step 1000` takes about 4 seconds and moves about 21.43°. Microstepping does not
+increase maximum motor torque.
 Normal generated joint limits, e-stop, the 200 ms lease and servo hard pulse
 windows are unchanged.
 After configuring verified electrical parameters and arming only the stepper,
@@ -301,8 +303,8 @@ use `measure stepper` for one explicitly confirmed larger trial. Keep linkage
 unloaded, the work area clear and the physical power e-stop ready; no automatic
 repeat or sweep.
 The encoder must remain stable for at least 100 ms after the emitted target is reached.
-Failure to finish/settle within nominal travel time plus 3 seconds (4 seconds for
-1000 microsteps) aborts without retrying the move.
+Failure to finish/settle within nominal travel time plus 3 seconds aborts without
+retrying the move.
 The 200 ms bench lease disables outputs if host keepalives stop. This isolated bench mode
 is the only approved exception to normal homing/joint-angle enforcement.
 

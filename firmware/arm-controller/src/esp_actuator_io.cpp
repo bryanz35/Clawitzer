@@ -5,6 +5,7 @@
 #include <string.h>
 #include "board_config.h"
 #include "hardware_protocol.h"
+#include "protocol.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/uart.h"
@@ -333,11 +334,11 @@ bool EspActuatorIO::configureCamera(const Config& board) {
 }
 
 bool EspActuatorIO::cameraPulse(float deg) {
-  if (!cameraConfigured_ || !std::isfinite(deg) || deg < kCameraMinDeg || deg > kCameraMaxDeg) return false;
+  if (!cameraConfigured_ || !std::isfinite(deg) || deg < proto::kCameraMinDeg || deg > proto::kCameraMaxDeg) return false;
   if (estopActive()) return false;
-  const double span = static_cast<double>(kCameraMaxDeg) - kCameraMinDeg;
+  const double span = static_cast<double>(proto::kCameraMaxDeg) - proto::kCameraMinDeg;
   const int32_t us = static_cast<int32_t>(lround(kCameraMinUs +
-      (static_cast<double>(deg) - kCameraMinDeg) *
+      (static_cast<double>(deg) - proto::kCameraMinDeg) *
           (kCameraMaxUs - kCameraMinUs) / span));
   if (us < kCameraMinUs || us > kCameraMaxUs) return false;
   const uint32_t duty = (static_cast<uint32_t>(us) * (1u << 14) + kPwmPeriodUs / 2) / kPwmPeriodUs;

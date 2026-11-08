@@ -5,7 +5,8 @@ export const CALIBRATION_MAX_LINE = 192;
 export const CALIBRATION_ENTER_ACK = "UNLOADED_ESTOP_READY";
 export const CALIBRATION_REFERENCE_ACK = "HOME_MARK_CONFIRMED";
 // Raw bench jog policy; keep firmware calibration_protocol.h in sync.
-export const CALIBRATION_STEP_RATE = 1000; // Microsteps per second.
+/** Bench step speed in FULL steps per second (~19 RPM on a 200-step motor at any microstep setting). */
+export const CALIBRATION_FULL_STEP_RATE = 62.5;
 export const CALIBRATION_KEY_ARITY = {
   pins: 14, estop: 1, pulse: 4, base: 2, wrist: 6, gripper: 2,
   stepper: 7, following: 1, address: 1,

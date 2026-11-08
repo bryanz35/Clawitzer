@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Espressif VID 0x303a (12346): the ESP32-S3 native USB CDC. Attaching it offers to open this app and grants USB permission. -->
+<!-- NodeMCU-32S onboard USB-UART bridge: Silicon Labs CP210x (VID 0x10C4 = 4292) or WCH CH340 (VID 0x1A86 = 6790).
+     Attaching it offers to open this app and grants USB permission. Untested on the team's exact board. -->
 <resources>
-    <usb-device vendor-id="12346" />
+    <usb-device vendor-id="4292" />
+    <usb-device vendor-id="6790" />
 </resources>

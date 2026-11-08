@@ -344,7 +344,8 @@ export class JointSerial {
     }
     const camera = parseCameraStatus(line);
     if (camera) {
-      this.cameraSequence = camera.seq;
+      // Only forward: V (incl. the 1 Hz heartbeat) lags our own P sends; a reset MCU accepts any seq.
+      if (this.cameraSequence === null || seqIsNewer(camera.seq, this.cameraSequence)) this.cameraSequence = camera.seq;
       this.state.camera = { ...camera, lastAt: performance.now() };
       this.emit();
       return;
