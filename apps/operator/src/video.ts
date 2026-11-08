@@ -1,38 +1,38 @@
-// World-locked video panel showing a crop of the phone's wide-FOV stream.
-// Crop offset = head orientation − phone orientation (the phone rides the pan/tilt stand, so its
-// sensor gives the true camera pose). The stand follows the head; the crop hides its lag.
+// Immersive video: the phone's full wide-FOV frame on a big plane placed where the camera
+// actually points (phone orientation, yaw re-zeroed to the XR frame). The stand follows the head,
+// so the view follows gaze while the world stays put. The frame is shrunk to `displayHFovDeg` so both
+// edges sit inside the headset's view; a uniformly scaled pinhole image is still undistorted (just zoomed out).
 
-import { Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3, VideoTexture } from "three";
+import { DataTexture, Group, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3, VideoTexture } from "three";
 import type { Quat } from "@arm-mirror/protocol";
+import type { Pose } from "./tracking";
 
 export interface VideoPanelOptions {
   /** Horizontal / vertical FOV of the captured stream (landscape). */
   sourceHFovDeg: number;
   sourceVFovDeg: number;
-  /** FOV of the crop shown on the panel. */
-  cropHFovDeg: number;
-  /** Panel width in meters; height follows the crop aspect. */
-  widthM: number;
+  /** Horizontal angle the whole frame subtends in the headset; vertical follows the source aspect. */
+  displayHFovDeg: number;
+  /** Plane distance from the eye. Far enough that the eyes' offset from the pivot is negligible. */
+  distanceM: number;
+  /** Fraction of each edge faded to black. */
+  feather: number;
 }
 
 export const DEFAULT_VIDEO: VideoPanelOptions = {
   // Galaxy S25 Ultra 2.2 mm ultrawide, full 4:3 sensor (pinhole FOV the phone app reports on its camera button).
   sourceHFovDeg: 105,
   sourceVFovDeg: 88,
-  cropHFovDeg: 90,
-  // 2·2 m·tan(35°): at the 2 m panel distance (main.ts) the panel spans the 70° crop, so the view is life-size
-  // and the video is not minified (minifying a non-mipmapped VideoTexture shimmers and loses detail).
-  widthM: 2.8,
+  // Quest 3 is ~110°×96° but blurs toward the lens edges; 80° keeps both edges clearly in view.
+  displayHFovDeg: 80,
+  distanceM: 10,
+  feather: 0.02,
 };
 
 /** The −Z axis rotated by q, as [x, y, z]. */
 function forward(q: Quat): [number, number, number] {
   const f = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...q));
   return [f.x, f.y, f.z];
-}
-
-function wrapPi(a: number): number {
-  return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
 /** Yaw (CCW from above) and pitch (up +) of the WebXR head's forward (−Z) axis. */
@@ -51,25 +51,43 @@ export function cameraYawPitch(q: Quat): [number, number] {
   return [Math.atan2(-f[0], f[1]), Math.asin(Math.max(-1, Math.min(1, f[2])))];
 }
 
+/** Alpha mask: opaque middle, smoothstep fade over `feather` of each edge. */
+function featherMask(feather: number, n = 64): DataTexture {
+  const ramp = (t: number) => {
+    const x = Math.min(1, Math.min(t, 1 - t) / feather);
+    return x * x * (3 - 2 * x);
+  };
+  const data = new Uint8Array(n * n * 4);
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) data.fill(Math.round(255 * ramp((i + 0.5) / n) * ramp((j + 0.5) / n)), (j * n + i) * 4, (j * n + i + 1) * 4);
+  const tex = new DataTexture(data, n, n);
+  tex.magFilter = tex.minFilter = LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export class VideoPanel {
-  readonly mesh: Mesh;
-  private readonly opts: VideoPanelOptions;
+  /** Pivot at the eye; the plane hangs `distanceM` down its −Z. */
+  readonly object = new Group();
   private readonly video: HTMLVideoElement;
-  private readonly texture: VideoTexture;
   private yawOffset: number | null = null;
 
   constructor(opts: Partial<VideoPanelOptions> = {}) {
-    this.opts = { ...DEFAULT_VIDEO, ...opts };
+    const o = { ...DEFAULT_VIDEO, ...opts };
     this.video = document.createElement("video");
     this.video.muted = true;
     this.video.playsInline = true;
-    this.texture = new VideoTexture(this.video);
-    this.texture.colorSpace = SRGBColorSpace;
-    const cropVFov = (this.opts.cropHFovDeg * this.opts.sourceVFovDeg) / this.opts.sourceHFovDeg;
-    const heightM = (this.opts.widthM * cropVFov) / this.opts.cropHFovDeg;
-    this.mesh = new Mesh(new PlaneGeometry(this.opts.widthM, heightM), new MeshBasicMaterial({ map: this.texture }));
-    this.texture.repeat.set(this.opts.cropHFovDeg / this.opts.sourceHFovDeg, cropVFov / this.opts.sourceVFovDeg);
-    this.center();
+    const texture = new VideoTexture(this.video);
+    texture.colorSpace = SRGBColorSpace;
+    const tan = (deg: number) => Math.tan((deg * Math.PI) / 360);
+    const widthM = 2 * o.distanceM * tan(o.displayHFovDeg);
+    const plane = new Mesh(
+      new PlaneGeometry(widthM, (widthM * tan(o.sourceVFovDeg)) / tan(o.sourceHFovDeg)),
+      new MeshBasicMaterial({ map: texture, alphaMap: featherMask(o.feather), transparent: true, depthWrite: false }),
+    );
+    plane.position.z = -o.distanceM;
+    plane.renderOrder = -1; // behind the HUD
+    this.object.add(plane);
   }
 
   setStream(stream: MediaStream): void {
@@ -85,23 +103,19 @@ export class VideoPanel {
     this.yawOffset = headYawPitch(head)[0] - cameraYawPitch(cam)[0];
   }
 
-  /** Per frame. Without a camera orientation (or before calibration) the crop stays centered. */
-  update(head: Quat | null, cam: Quat | null): void {
-    if (!head || !cam) return;
-    if (this.yawOffset === null) this.calibrate(head, cam);
-    const [hy, hp] = headYawPitch(head);
-    const [cy, cp] = cameraYawPitch(cam);
-    const dYaw = wrapPi(hy - cy - (this.yawOffset ?? 0));
-    const dPitch = hp - cp;
-    // Linear angle→UV mapping. TODO: replace with the lens model once the phone is known.
-    const rx = this.texture.repeat.x;
-    const ry = this.texture.repeat.y;
-    const u = 0.5 - rx / 2 - (dYaw * 180) / Math.PI / this.opts.sourceHFovDeg;
-    const v = 0.5 - ry / 2 + (dPitch * 180) / Math.PI / this.opts.sourceVFovDeg;
-    this.texture.offset.set(Math.min(1 - rx, Math.max(0, u)), Math.min(1 - ry, Math.max(0, v)));
-  }
-
-  private center(): void {
-    this.texture.offset.set(0.5 - this.texture.repeat.x / 2, 0.5 - this.texture.repeat.y / 2);
+  /** Per frame. Without a camera orientation the plane is head-locked (assumes the stand tracks the head). */
+  update(head: Pose | null, cam: Quat | null): void {
+    if (!head) return;
+    this.object.position.set(...head.position);
+    let yaw: number, pitch: number;
+    if (cam) {
+      if (this.yawOffset === null) this.calibrate(head.orientation, cam);
+      [yaw, pitch] = cameraYawPitch(cam);
+      yaw += this.yawOffset ?? 0;
+    } else {
+      [yaw, pitch] = headYawPitch(head.orientation);
+    }
+    // Yaw/pitch only: the stand has no roll axis, and ignoring the sensor's roll keeps the horizon level.
+    this.object.rotation.set(pitch, yaw, 0, "YXZ");
   }
 }
