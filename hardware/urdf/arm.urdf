@@ -12,8 +12,9 @@
   and the zero pose is the arm straight forward along +X. Servo-angle offsets live in firmware calibration.
   Positive directions (right-hand rule about each axis): j1 CCW seen from above, j2 forearm DOWN, j3 wrist DOWN,
   j4 CCW about the forearm (+X).
-  Limits below are mechanical's SAFE working range. Hard stops: j2 -130…+30° (safe -90…+20, i.e. 90° up,
-  20° down); j1/j4/j5 hard stops equal their safe range; j3 stops at -63° by collision (measured
+  Limits below are mechanical's SAFE working range. j2 is -80…+30° (5° above the -75° park,
+  105° below it); its hard stops are -130…+30°, so the lower end has no margin left.
+  j1/j4/j5 hard stops equal their safe range; j3 stops at -63° by collision (measured
   2026-11-07), not at a servo end. j1 ±180° ends are the same heading, kept apart
   by cable wrap: never shortcut across them. The differential wrist pair (j3/j4) is additionally
   coupled to |j3| + |j4| <= 90°; the firmware enforces and validates that diamond.
@@ -65,7 +66,7 @@
     <child link="forearm"/>
     <origin xyz="0.0766 0 0.0643" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="0.349066" effort="1" velocity="0.5"/>
+    <limit lower="-1.396263" upper="0.523599" effort="1" velocity="0.5"/>
     <arm_mirror home="0" acceleration="1.0" park="-1.308997"/>
   </joint>
 

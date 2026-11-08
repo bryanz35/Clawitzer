@@ -455,6 +455,31 @@ void test_symmetric_differential_wrist_uses_coupled_diamond() {
   TEST_ASSERT_EQUAL_FLOAT(0, wristTiltSumDeg(asymmetric));  // Falls back to rectangles.
 }
 
+void test_projected_wrist_poses_always_map_inside_the_servo_windows() {
+  const Config config = boardConfig();
+  const float limit = wristTiltSumDeg(config);
+  TEST_ASSERT_TRUE(limit > 0);
+  // Exactly the arithmetic Arm::clampWrist performs. Poses on the diamond edge compute a pulse
+  // like 2500.0001 us, which must still be accepted because round() writes 2500.
+  for (float roll = -90.0f; roll <= 90.0f; roll += 3.0f) {
+    for (float pitch = ARM_JOINT_MIN_DEG[WristPitch]; pitch <= ARM_JOINT_MAX_DEG[WristPitch]; pitch += 3.0f) {
+      float r = roll;
+      float p = pitch;
+      const float sum = fabsf(r) + fabsf(p);
+      if (sum > limit) {
+        const float scale = limit / sum;
+        r *= scale;
+        p *= scale;
+      }
+      float deg[ARM_NUM_JOINTS] = {};
+      deg[WristRoll] = r;
+      deg[WristPitch] = p;
+      Targets target;
+      TEST_ASSERT_TRUE(map(config, deg, target));
+    }
+  }
+}
+
 void test_persisted_values_cannot_restore_old_board_pins_or_hard_windows() {
   Config old = calibrated();
   old.pins.servo[WristA] = 6;
@@ -498,6 +523,7 @@ int main() {
   RUN_TEST(test_geared_base_maps_full_travel_about_forward_without_wrapping);
   RUN_TEST(test_measured_gripper_maps_closed_midpoint_and_open_without_overtravel);
   RUN_TEST(test_symmetric_differential_wrist_uses_coupled_diamond);
+  RUN_TEST(test_projected_wrist_poses_always_map_inside_the_servo_windows);
   RUN_TEST(test_persisted_values_cannot_restore_old_board_pins_or_hard_windows);
   return UNITY_END();
 }

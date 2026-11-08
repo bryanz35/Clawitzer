@@ -67,7 +67,7 @@
             </div>
             <span id="control-state" class="state-label" role="status">Motion unavailable</span>
           </div>
-          <p class="motion-instructions">Hold a joint’s − or + button with the mouse, or hold <kbd>Space</kbd> plus its direction key. You can also hold <kbd>Enter</kbd> on a focused jog button. Releasing the input or leaving this window requests a hold at the latest firmware-reported pose and stops streaming. Motion never resumes automatically.</p>
+          <p class="motion-instructions">Hold a joint’s − or + button with the mouse, or hold <kbd>Shift</kbd> plus a direction key. You can also hold <kbd>Enter</kbd> on a focused jog button. Releasing the input or leaving this window requests a hold at the latest firmware-reported pose and stops streaming. Motion never resumes automatically.</p>
 
           <div class="speed-control">
             <label for="speed">Jog speed <output id="speed-value" for="speed">20%</output></label>
@@ -117,13 +117,13 @@
 
           <section class="panel keyboard-panel" aria-labelledby="keyboard-heading">
             <h2 id="keyboard-heading">Keyboard guide</h2>
-            <p>Keep <kbd>Space</kbd> held, then hold a direction key.</p>
+            <p>Keep <kbd>Shift</kbd> held, then hold a direction key.</p>
             <dl class="keyboard-list">
-              <div><dt>Base</dt><dd><kbd>Q</kbd> + <span aria-hidden="true">/</span> <kbd>A</kbd> −</dd></div>
-              <div><dt>Elbow</dt><dd><kbd>W</kbd> + <span aria-hidden="true">/</span> <kbd>S</kbd> −</dd></div>
-              <div><dt>Wrist pitch</dt><dd><kbd>E</kbd> + <span aria-hidden="true">/</span> <kbd>D</kbd> −</dd></div>
-              <div><dt>Wrist roll</dt><dd><kbd>R</kbd> + <span aria-hidden="true">/</span> <kbd>F</kbd> −</dd></div>
-              <div><dt>Gripper</dt><dd><kbd>T</kbd> + <span aria-hidden="true">/</span> <kbd>G</kbd> −</dd></div>
+              <div><dt>Base</dt><dd><kbd>A</kbd> left / <kbd>D</kbd> right</dd></div>
+              <div><dt>Elbow</dt><dd><kbd>W</kbd> up / <kbd>S</kbd> down</dd></div>
+              <div><dt>Wrist pitch</dt><dd><kbd>↑</kbd> up / <kbd>↓</kbd> down</dd></div>
+              <div><dt>Wrist roll</dt><dd><kbd>←</kbd> left / <kbd>→</kbd> right</dd></div>
+              <div><dt>Gripper</dt><dd><kbd>T</kbd> open / <kbd>G</kbd> close</dd></div>
             </dl>
             <p class="support-note"><kbd>Esc</kbd> requests a hold. Shortcuts are inactive while editing a field. A fresh input is required after a hold, disconnect or status interruption.</p>
           </section>

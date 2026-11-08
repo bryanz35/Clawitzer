@@ -1,7 +1,7 @@
 import { CMD_HZ } from "@arm-mirror/protocol";
 import { DEG, loadArm } from "@arm-mirror/kinematics";
 import urdfText from "../../../hardware/urdf/arm.urdf?raw";
-import { JointJog, JOINT_KEYS } from "./joint-jog";
+import { JointJog } from "./joint-jog";
 import { JointSerial } from "./joint-serial";
 
 const model = loadArm(urdfText);
@@ -49,11 +49,18 @@ const rows = model.names.map((name, joint) => {
   const row = document.createElement("article");
   row.className = "joint-card";
   row.dataset.joint = String(joint);
-  const keys = JOINT_KEYS[joint].map((key) => key.slice(3));
+  // Physical direction per key: the joint's numeric sign is not user-meaningful here.
+  const hints = [
+    "<kbd>A</kbd> left / <kbd>D</kbd> right",
+    "<kbd>W</kbd> up / <kbd>S</kbd> down",
+    "<kbd>↑</kbd> up / <kbd>↓</kbd> down",
+    "<kbd>←</kbd> left / <kbd>→</kbd> right",
+    "<kbd>T</kbd> open / <kbd>G</kbd> close",
+  ];
   const lo = model.limits[joint].lower * DEG;
   const hi = model.limits[joint].upper * DEG;
   row.innerHTML = `
-    <div class="joint-head"><h3></h3><span class="joint-key"><kbd>${keys[0]}</kbd> + / <kbd>${keys[1]}</kbd> −</span></div>
+    <div class="joint-head"><h3></h3><span class="joint-key">${hints[joint]}</span></div>
     <div class="joint-readouts"><span class="joint-actual">—</span><span class="joint-target">—</span></div>
     <div class="joint-track" aria-hidden="true"><span class="joint-position"></span><span class="joint-command"></span></div>
     <div class="joint-limits"><span>${lo.toFixed(1)}°</span><span>${hi.toFixed(1)}°</span></div>
@@ -284,7 +291,7 @@ function render(): void {
     if (target !== undefined) row.command.style.left = `${Math.min(100, Math.max(0, (target - row.lo) / (row.hi - row.lo) * 100))}%`;
   }
   if (ready) {
-    setText(controlState, jog.moving ? "Jogging · release to hold" : "Ready · hold Space + joint keys, or hold a jog button");
+    setText(controlState, jog.moving ? "Jogging · release to hold" : "Ready · hold Shift + joint keys, or hold a jog button");
     controlState.dataset.state = jog.moving ? "active" : "ready";
   } else {
     controlState.dataset.state = "idle";
