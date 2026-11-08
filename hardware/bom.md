@@ -14,4 +14,4 @@
 | USB-C OTG cable (phone ↔ ESP32) | 1 | TODO |
 | Wi-Fi router (or phone hotspot) | 1 | Venue Wi-Fi often blocks device-to-device traffic. |
 | Gripper | 1 | Yes: j5, rack and pinion on a 25 kg hobby servo. |
-| Structural parts / fasteners | — | TODO: from CAD (`hardware/cad/`). |
+| Structural parts / fasteners | — | TODO: from CAD. |

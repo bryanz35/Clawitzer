@@ -150,7 +150,7 @@ class RobotApp(private val ctx: Application) {
     /** Reset button: drop the link; Connect arm re-handshakes. */
     fun resetArm() = armLink.close()
 
-    /** Swaps between the USB link and the mock MCU (the old ?mockSerial=1). */
+    /** Swaps between the USB link and the mock MCU. */
     fun setMock(on: Boolean) {
         if (on == mock.value) return
         armLink.close()

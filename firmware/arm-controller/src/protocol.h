@@ -14,7 +14,6 @@
 
 namespace proto {
 
-constexpr uint32_t kSerialBaud = 115200;
 constexpr size_t kMaxLineLen = 192;
 constexpr float kCameraMinDeg = 0.0f;
 constexpr float kCameraMaxDeg = 180.0f;

@@ -100,7 +100,6 @@ export interface PeerMsg {
 
 export type ControlMsg = JointsMsg | PanMsg | CamOrientMsg | StatusMsg | DebugMsg | TrackMsg;
 export type SignalMsg = OfferMsg | AnswerMsg | IceMsg | PeerMsg;
-export type Message = ControlMsg | SignalMsg;
 
 // ── Type guards ────────────────────────────────────────────────────────────
 

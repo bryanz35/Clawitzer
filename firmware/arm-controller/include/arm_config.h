@@ -5,7 +5,6 @@
 
 #define ARM_NUM_JOINTS 5
 
-static const char* const ARM_JOINT_NAMES[ARM_NUM_JOINTS] = {"j1", "j2", "j3", "j4", "j5"};
 static const float ARM_JOINT_MIN_DEG[ARM_NUM_JOINTS] = {-180.000f, -80.000f, -63.000f, -90.000f, -90.000f};
 static const float ARM_JOINT_MAX_DEG[ARM_NUM_JOINTS] = {180.000f, 30.000f, 90.000f, 90.000f, 90.000f};
 static const float ARM_JOINT_MAX_VEL_DEG_S[ARM_NUM_JOINTS] = {28.648f, 28.648f, 28.648f, 28.648f, 28.648f};

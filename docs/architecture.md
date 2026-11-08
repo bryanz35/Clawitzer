@@ -28,7 +28,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - The IK runs here, not on the phone. The Quest has the poses, and keeping the phone a dumb relay keeps its thermals down.
 - The HUD shows commanded angles and the MCU-reported state; the video panel shows the real arm. The phone app's **Debug arm model in VR** switch sends `debug {on}` (1 Hz); the operator then shows `debug-arm.ts`, a head-locked stick model of the `arm.urdf` chain at the commanded pose (gripper not drawn).
 - `?emulate=1` installs IWER for desktop work. `?mockRobot=1` runs without a phone.
-- `control.html` is a separate desktop Chrome page that sends normal `J` commands directly to the MCU over Web Serial. It reuses protocol, URDF and twin code but not WebRTC, tracking or IK. Web Serial is unavailable in Quest Browser and the Android WebView, so this page is laptop-only.
+- `control.html` is a separate desktop Chrome page that sends normal `J` commands directly to the MCU over Web Serial. It reuses protocol and URDF code but not WebRTC, tracking or IK. Web Serial is unavailable in Quest Browser and the Android WebView, so this page is laptop-only.
 
 **apps/robot-android (native Android app, Kotlin + Compose).** One process does what the phone web page and the Termux server used to do.
 - `hub/Hub.kt` (Ktor CIO on :8080) serves the operator bundle from `assets/web/` and the `/signal?role=operator` WebSocket. The robot peer is in-process, so the hub tells the operator `peer robot present:true` on connect. A newer operator replaces the old one with close code 4000. No business logic.

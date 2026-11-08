@@ -19,7 +19,6 @@ export function renderArmConfig(urdfText: string): string {
 
 #define ARM_NUM_JOINTS ${n}
 
-static const char* const ARM_JOINT_NAMES[ARM_NUM_JOINTS] = {${model.names.map((s) => `"${s}"`).join(", ")}};
 static const float ARM_JOINT_MIN_DEG[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.lower))}};
 static const float ARM_JOINT_MAX_DEG[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.upper))}};
 static const float ARM_JOINT_MAX_VEL_DEG_S[ARM_NUM_JOINTS] = {${f(lim.map((l) => l.velocity))}};

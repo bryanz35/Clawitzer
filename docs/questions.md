@@ -1,15 +1,11 @@
 # Arm specs: questions for mechanical
 
 Fill in the blanks and send back, or edit this file directly. **Millimeters and degrees are fine**; software converts.
-Every number in the code right now is a placeholder. Your answers replace them in:
+The answers below are adopted (see `docs/decisions.md`, 2026-11-07); unchecked items are still open. They live in:
 
 - `hardware/urdf/arm.urdf`: geometry, joint limits, home pose (single source of truth; firmware limits are generated from it)
-- `firmware/arm-controller/src/servos.cpp`: servo pins, pulse ranges, directions, offsets
+- `firmware/arm-controller/src/board_config.h`: pins, pulse windows, measured actuator mappings
 - `hardware/bom.md`: part numbers
-
-A **sketch or CAD screenshot** of the arm at its zero pose, with each joint axis drawn and labeled j1…j5, answers half of this at once.
-
-![0 pos](Armdrawing.jpg)
 ---
 
 ## 1. Joints
@@ -271,6 +267,6 @@ Landscape, camera facing downward at a slight angle(~10 degrees) pointing in the
 Lens position: 0 mm from pan
 Tilt not possible
 
-## 11. Optional (no longer needed: the in-VR 3D arm copy was dropped)
+## 11. Optional (not needed: the debug arm model draws plain bars from the URDF chain)
 
 - [ ] Rough outer size of each link as a box or cylinder (mm). STL export is fine too.

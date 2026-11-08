@@ -11,9 +11,6 @@ export const SERIAL_BAUD = 115200;
 /** Joint command rate, phone → MCU. */
 export const CMD_HZ = 50;
 
-/** Status line rate, MCU → phone. */
-export const STATUS_HZ = 10;
-
 /** Firmware holds position if no valid command arrives within this window. */
 export const WATCHDOG_MS = 200;
 
