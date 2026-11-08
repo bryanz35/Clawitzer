@@ -21,7 +21,9 @@ import com.armmirror.robot.hub.HUB_PORT
 import com.armmirror.robot.hub.Hub
 import com.armmirror.robot.protocol.Status
 import com.armmirror.robot.protocol.camOrientJson
+import com.armmirror.robot.protocol.debugJson
 import com.armmirror.robot.protocol.statusJson
+import com.armmirror.robot.protocol.trackJson
 import com.armmirror.robot.rtc.CameraInfo
 import com.armmirror.robot.rtc.RobotPeer
 import com.armmirror.robot.rtc.pickWideCamera
@@ -47,6 +49,10 @@ class RobotApp(private val ctx: Application) {
     val link = mutableStateOf("waiting for operator")
     val arm = mutableStateOf(ArmLinkState.DISCONNECTED)
     val mock = mutableStateOf(false)
+    /** Operator shows the commanded-pose arm model in VR. */
+    val debug = mutableStateOf(false)
+    /** Operator hand-tracking mapping, one of TRACK_MODES. */
+    val track = mutableStateOf("hand")
     val camera = mutableStateOf<CameraInfo?>(null)
     val orient = mutableStateOf("off")
     /** Latest MCU status line; null unless the arm link is READY. */
@@ -89,6 +95,14 @@ class RobotApp(private val ctx: Application) {
         peer.onJoints = relay::onJoints
         hub.start()
         operatorUrls.forEach { log("operator: $it") }
+        // The control channel never retransmits, so resend the switch state (also reaches a newly connected operator).
+        main.post(object : Runnable {
+            override fun run() {
+                peer.send(debugJson(debug.value))
+                peer.send(trackJson(track.value))
+                main.postDelayed(this, 1000)
+            }
+        })
     }
 
     private fun wire(a: ArmLink) {
@@ -127,6 +141,16 @@ class RobotApp(private val ctx: Application) {
         armLink = if (on) MockArmLink().also(::wire) else usbLink
         mock.value = on
         if (on) armLink.connect()
+    }
+
+    fun setDebug(on: Boolean) {
+        debug.value = on
+        peer.send(debugJson(on))
+    }
+
+    fun setTrack(mode: String) {
+        track.value = mode
+        peer.send(trackJson(mode))
     }
 
     /** Call after CAMERA permission is granted. */

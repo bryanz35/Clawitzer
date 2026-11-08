@@ -35,6 +35,22 @@ export interface StatusMsg {
   deg: JointDeg;
 }
 
+/** Phone → Quest. The phone app's debug switch: show the commanded-pose arm model in VR. Resent ~1 Hz (the channel drops). */
+export interface DebugMsg {
+  t: "debug";
+  on: boolean;
+}
+
+export const TRACK_MODES = ["hand", "elbow"] as const;
+/** "hand": hand motion since engage (clutch). "elbow": elbow→hand vector mirrored from the arm's elbow (needs body tracking). */
+export type TrackMode = (typeof TRACK_MODES)[number];
+
+/** Phone → Quest. The phone app's hand-tracking mapping choice. Resent ~1 Hz (the channel drops). */
+export interface TrackMsg {
+  t: "track";
+  mode: TrackMode;
+}
+
 // ── IMU wearable WebSocket (wearable → Quest) ──────────────────────────────
 
 export interface ImuMsg {
@@ -82,7 +98,7 @@ export interface PeerMsg {
   present: boolean;
 }
 
-export type ControlMsg = JointsMsg | CamOrientMsg | StatusMsg;
+export type ControlMsg = JointsMsg | CamOrientMsg | StatusMsg | DebugMsg | TrackMsg;
 export type SignalMsg = OfferMsg | AnswerMsg | IceMsg | PeerMsg;
 export type Message = ControlMsg | ImuMsg | SignalMsg;
 
@@ -130,6 +146,14 @@ export function isStatusMsg(x: unknown): x is StatusMsg {
   return isObj(x) && x.t === "status" && isSeq(x.seq) && isArmState(x.state) && isJointDeg(x.deg);
 }
 
+export function isDebugMsg(x: unknown): x is DebugMsg {
+  return isObj(x) && x.t === "debug" && typeof x.on === "boolean";
+}
+
+export function isTrackMsg(x: unknown): x is TrackMsg {
+  return isObj(x) && x.t === "track" && typeof x.mode === "string" && (TRACK_MODES as readonly string[]).includes(x.mode);
+}
+
 export function isImuMsg(x: unknown): x is ImuMsg {
   return isObj(x) && x.t === "imu" && isSeq(x.seq) && isQuat(x.forearm) && isQuat(x.hand);
 }
@@ -161,7 +185,7 @@ export function isPeerMsg(x: unknown): x is PeerMsg {
 }
 
 export function isControlMsg(x: unknown): x is ControlMsg {
-  return isJointsMsg(x) || isCamOrientMsg(x) || isStatusMsg(x);
+  return isJointsMsg(x) || isCamOrientMsg(x) || isStatusMsg(x) || isDebugMsg(x) || isTrackMsg(x);
 }
 
 export function isSignalMsg(x: unknown): x is SignalMsg {

@@ -14,9 +14,11 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 1. The Quest renders an XR frame. `tracking.ts` reads the wrist, the middle-finger knuckle, the thumb and index tips, the elbow (`XRFrame.body`) and the head. Missing poses are `null`.
 2. `deadman.ts` decides whether the arm should follow: an index–thumb pinch held for 150 ms, with the palm facing away from the head. The palm-toward-head pinch is reserved by the system.
 3. While engaged:
-   - The knuckle position relative to the elbow, plus the wrist orientation, is converted from the WebXR frame to the arm base frame (`xrToArmVec`/`xrToArmQuat`).
+   - `clutch.ts` maps the hand's motion *since engage* onto the arm's tool pose at engage. The knuckle displacement and wrist rotation are expressed in the operator's facing frame (head yaw at engage), then converted to the arm base frame (`xrToArmVec`/`xrToArmQuat`). Only hand tracking is needed. This is the default `hand` mode.
+   - Or, in `elbow` mode (phone app's **Hand tracking** choice, `track {mode}`), `elbow-mirror.ts` places the operator's elbow→knuckle vector at the arm's j2 pivot and uses the wrist orientation directly, in the same facing frame. It needs the body-tracking elbow (holds without it) and blends from the arm's pose at engage over 1.5 s. A mode change mid-pinch holds until the next pinch.
    - The pose is One Euro filtered, then solved by `ArmIK` on the main thread.
    - The IK clamps to URDF limits and rejects any per-frame jump above `MAX_JOINT_STEP_DEG`.
+   - The HUD shows each joint's commanded and reported angle, where it sits within its limits, and the IK result (ok / out of reach / step rejected, clamped, position and rotation error).
 4. At 50 Hz, the operator sends `joints {seq, deg[5], engaged}` on the unordered `control` data channel.
 5. The phone drops stale or reordered messages by seq. It forwards to serial **only if `engaged`**, as `J,<seq>,…*crc`, using its own serial seq.
 6. The firmware checks the CRC and seq, clamps position, velocity and acceleration per joint, and steps the servos at 100 Hz. If no valid command arrives for 200 ms, it holds and reports `WATCHDOG`.
@@ -26,13 +28,13 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 **apps/operator (Quest Browser, WebXR + Three.js).** Owns all user-facing logic: tracking, the deadman, filtering, IK, the HUD and the video panel.
 - The IK runs here, not on the phone. The Quest has the poses, and keeping the phone a dumb relay keeps its thermals down.
-- No in-VR 3D arm copy. The HUD shows commanded angles and the MCU-reported state; the video panel shows the real arm.
+- The HUD shows commanded angles and the MCU-reported state; the video panel shows the real arm. The phone app's **Debug arm model in VR** switch sends `debug {on}` (1 Hz); the operator then shows `debug-arm.ts`, a head-locked stick model of the `arm.urdf` chain at the commanded pose (gripper not drawn).
 - `?emulate=1` installs IWER for desktop work. `?mockRobot=1` runs without a phone.
 - `control.html` is a separate desktop Chrome page that sends normal `J` commands directly to the MCU over Web Serial. It reuses protocol, URDF and twin code but not WebRTC, tracking or IK. Web Serial is unavailable in Quest Browser and the Android WebView, so this page is laptop-only.
 
 **apps/robot-android (native Android app, Kotlin + Compose).** One process does what the phone web page and the Termux server used to do.
 - `hub/Hub.kt` (Ktor CIO on :8080) serves the operator bundle from `assets/web/` and the `/signal?role=operator` WebSocket. The robot peer is in-process, so the hub tells the operator `peer robot present:true` on connect. A newer operator replaces the old one with close code 4000. No business logic.
-- `rtc/RobotPeer.kt` is the WebRTC answerer (libwebrtc via stream-webrtc-android). It sends the Camera2 track plus `camOrient` and `status` on the `control` channel. No STUN: LAN host candidates only.
+- `rtc/RobotPeer.kt` is the WebRTC answerer (libwebrtc via stream-webrtc-android). It sends the Camera2 track plus `camOrient`, `status`, `debug` and `track` on the `control` channel. No STUN: LAN host candidates only.
 - `arm/Relay.kt` drops stale `joints` by seq and forwards only `engaged` ones. `arm/UsbArmLink.kt` writes them to the MCU over USB host (usb-serial-for-android). `arm/SerialSession` handshakes on every (re)connect by waiting for a status line and continuing from its seq. A "Mock MCU" switch replaces USB with a fake 10 Hz status.
 - NodeMCU-32S boards expose UART0 through a CP210x/CH340-style bridge, not CDC-ACM. usb-serial-for-android's default prober supports those chips, but `res/xml/device_filter.xml` only matches the Espressif VID, so attaching the board won't auto-launch the app. Untested on the real board. A phone-side deliberate marked-home reference action is also required after reconnect resets; the current reference workflow is the laptop CLI.
 - `sensors/Orientation.kt` sends `TYPE_ROTATION_VECTOR` (device → ENU, the same frame Chrome's AbsoluteOrientationSensor used) at ~60 Hz.

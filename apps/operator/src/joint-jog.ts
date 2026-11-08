@@ -6,6 +6,9 @@ export const JOINT_KEYS = [
   ["KeyR", "KeyF"], ["KeyT", "KeyG"],
 ] as const;
 
+/** Joint names in protocol order (arm.urdf: j3 = wrist pitch, j4 = wrist roll). */
+export const JOINT_LABELS = ["Base yaw", "Elbow pitch", "Wrist pitch", "Wrist roll", "Gripper"] as const;
+
 const MAX_TICK_GAP_MS = 100;
 
 /** User authorization and degree-space jog trajectory. Firmware remains authoritative. */

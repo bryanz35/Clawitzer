@@ -1,14 +1,12 @@
 import { CMD_HZ } from "@arm-mirror/protocol";
 import { DEG, loadArm } from "@arm-mirror/kinematics";
 import urdfText from "../../../hardware/urdf/arm.urdf?raw";
-import { JointJog, JOINT_KEYS } from "./joint-jog";
+import { JointJog, JOINT_KEYS, JOINT_LABELS } from "./joint-jog";
 import { JointSerial } from "./joint-serial";
 
 const model = loadArm(urdfText);
 const serial = new JointSerial();
 const jog = new JointJog(model.limits);
-// URDF joint order is j1..j5 and j3 is wrist pitch, j4 wrist roll (see arm.urdf).
-const labels = ["Base yaw", "Elbow pitch", "Wrist pitch", "Wrist roll", "Gripper"];
 
 function element<T extends HTMLElement>(id: string): T {
   const result = document.getElementById(id);
@@ -58,11 +56,11 @@ const rows = model.names.map((name, joint) => {
     <div class="joint-track" aria-hidden="true"><span class="joint-position"></span><span class="joint-command"></span></div>
     <div class="joint-limits"><span>${lo.toFixed(1)}°</span><span>${hi.toFixed(1)}°</span></div>
     <div class="joint-buttons"><button type="button" class="jog-button" data-joint="${joint}" data-direction="-1" disabled>−</button><button type="button" class="jog-button" data-joint="${joint}" data-direction="1" disabled>+</button></div>`;
-  row.querySelector("h3")!.textContent = `${name} · ${labels[joint]}`;
+  row.querySelector("h3")!.textContent = `${name} · ${JOINT_LABELS[joint]}`;
   const buttons = [...row.querySelectorAll<HTMLButtonElement>(".jog-button")];
   buttons.forEach((button) => {
     const direction = Number(button.dataset.direction) as -1 | 1;
-    button.setAttribute("aria-label", `Hold to jog ${labels[joint]} ${direction > 0 ? "positive" : "negative"}`);
+    button.setAttribute("aria-label", `Hold to jog ${JOINT_LABELS[joint]} ${direction > 0 ? "positive" : "negative"}`);
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || !serial.ready || document.hidden) return;
