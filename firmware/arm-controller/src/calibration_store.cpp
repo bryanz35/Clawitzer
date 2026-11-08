@@ -12,7 +12,9 @@ namespace actuators {
 namespace {
 
 constexpr uint32_t kRecordMagic = 0x41435452;  // ACTR
-constexpr uint32_t kRecordVersion = 2;
+// v3 adds the marked-home encoder angle used for guarded auto-reference. Older blobs
+// fail the size check, so they are rejected rather than misinterpreted.
+constexpr uint32_t kRecordVersion = 3;
 constexpr const char* kNamespace = "arm_cal";
 // Leave the old full-Config "actuators" blob untouched for rollback firmware.
 constexpr const char* kKey = "mapping_v2";

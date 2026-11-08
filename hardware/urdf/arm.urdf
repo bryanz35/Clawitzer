@@ -13,8 +13,10 @@
   Positive directions (right-hand rule about each axis): j1 CCW seen from above, j2 forearm DOWN, j3 wrist DOWN,
   j4 CCW about the forearm (+X).
   Limits below are mechanical's SAFE working range. Hard stops: j2 -130…+30° (safe -90…+20, i.e. 90° up,
-  20° down); j1/j3/j4/j5 hard stops equal their safe range. j1 ±180° ends are the same heading, kept apart
-  by cable wrap: never shortcut across them.
+  20° down); j1/j4/j5 hard stops equal their safe range; j3 stops at -63° by collision (measured
+  2026-11-07), not at a servo end. j1 ±180° ends are the same heading, kept apart
+  by cable wrap: never shortcut across them. The differential wrist pair (j3/j4) is additionally
+  coupled to |j3| + |j4| <= 90°; the firmware enforces and validates that diamond.
   The arm base sits at the pan stand position (offset 0).
     TODO(open-item): velocity limits. Placeholder is 0.5 rad/s (~29°/s) on every joint.
     TODO(open-item): acceleration limits (<arm_mirror acceleration>, rad/s²). Placeholder is 1.0.
@@ -74,13 +76,19 @@
     </visual>
   </link>
 
-  <!-- j2 → wrist (j3/j4 intersect): 270 mm along +X. -->
+  <!-- j2 → wrist (j3/j4 intersect): 270 mm along +X.
+       Measured 2026-11-07: tilting further up than -63° (with zero roll) collides,
+       so j3 keeps that lower bound. The servos are not at their own stops there:
+       the differential pair can still roll at that pitch. Roll j4 keeps ±90°.
+       Because both servos are driven 1:2 by (roll ± pitch), the reachable wrist
+       region is the coupled diamond |j3| + |j4| <= 90°, not this rectangle; the
+       firmware enforces that coupling and validates it against the PWM windows. -->
   <joint name="j3" type="revolute">
     <parent link="forearm"/>
     <child link="wrist_pitch_link"/>
     <origin xyz="0.27 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="1" velocity="0.5"/>
+    <limit lower="-1.09956" upper="1.5708" effort="1" velocity="0.5"/>
     <arm_mirror home="0" acceleration="1.0"/>
   </joint>
 

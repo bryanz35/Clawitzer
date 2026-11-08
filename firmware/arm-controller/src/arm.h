@@ -46,6 +46,10 @@ class Arm {
   // E-stop level, true while servo power is cut. Entering → ESTOP (hold); releasing → re-home.
   void setEstop(bool active, uint32_t nowMs);
 
+  // Symmetric differential wrist coupling: every commanded pose is projected onto
+  // |j3| + |j4| <= sumMaxDeg. 0 disables it, which is the case until a calibration is saved.
+  void setWristCoupling(float sumMaxDeg) { wristSumMaxDeg_ = sumMaxDeg; }
+
   // One fixed-rate control tick.
   void update(uint32_t nowMs, float dtSec);
 
@@ -60,6 +64,8 @@ class Arm {
   void brake();
   // E-stop: freeze the setpoint now (servo power is already cut).
   void hold();
+  // Projects the differential wrist pair onto its coupled travel limit.
+  void clampWrist(float pose[ARM_NUM_JOINTS]) const;
   static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
   StateChangeFn onChange_;
@@ -71,4 +77,6 @@ class Arm {
   bool haveSeq_ = false;
   bool estop_ = false;
   uint32_t lastCmdMs_ = 0;
+  // 0 = uncoupled (no saved calibration yet).
+  float wristSumMaxDeg_ = 0.0f;
 };

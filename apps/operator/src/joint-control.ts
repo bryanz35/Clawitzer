@@ -7,7 +7,8 @@ import { JointSerial } from "./joint-serial";
 const model = loadArm(urdfText);
 const serial = new JointSerial();
 const jog = new JointJog(model.limits);
-const labels = ["Base yaw", "Elbow pitch", "Forearm roll", "Wrist pitch", "Gripper"];
+// URDF joint order is j1..j5 and j3 is wrist pitch, j4 wrist roll (see arm.urdf).
+const labels = ["Base yaw", "Elbow pitch", "Wrist pitch", "Wrist roll", "Gripper"];
 
 function element<T extends HTMLElement>(id: string): T {
   const result = document.getElementById(id);

@@ -36,7 +36,12 @@ class CalibrationSession {
  private:
   void fail(const char* reason, uint32_t nowMs);
   void disarm();
+  // Boot-time reference when the motor shaft still reads the angle recorded at the last
+  // marked-home reference. Any other reading is left to a manual reference.
+  void tryAutoReference(uint32_t nowMs);
   bool configure(const actuators::Config& config, uint8_t outputMask, uint32_t nowMs);
+  // Reads the shaft angle and integrates it only when the step is physically plausible.
+  bool readEncoderSample(uint32_t nowMs);
   bool set(const calibration::Command& command);
   bool get(const calibration::Command& command, char* fields, size_t capacity) const;
   bool dispatch(const calibration::Command& command, uint32_t nowMs, char* fields, size_t capacity);
@@ -64,6 +69,10 @@ class CalibrationSession {
   uint8_t armedMask_ = 0;
   bool jogPending_ = false;
   int32_t jogTarget_ = 0;
+  // Encoder plausibility window and fault debounce: one bad sample must not latch a fault.
+  uint32_t encoderMs_ = 0;
+  bool encoderTimed_ = false;
+  uint8_t followingFaults_ = 0, limitFaults_ = 0, sampleFaults_ = 0;
   int32_t pulses_[actuators::kServoCount] = {};
   char reply_[proto::kMaxLineLen + 8] = {};
   size_t replyLength_ = 0;

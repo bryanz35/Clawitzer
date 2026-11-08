@@ -140,16 +140,107 @@ We are essentially getting rid of everything past the elbow, except for forearm 
 
 | joint | servo model | travel (°, e.g. 180/270) | pulse range (µs) | gear/belt ratio servo:joint | ESP32 pin | horn mounted so servo center = joint angle ___° |
 |---|---|---|---|---|---|---|
-| j1 | 35kg Hobby | | 1:2 | | | |
-| j2 | Nema 17 | infinite | | 21:1 | | |
+| j1 | DSSERVO DS3235 | 180 assumed; verify variant | 500–2500 | 1:2 angular travel (joint = 2× servo) | GPIO13 | 1500 µs = straight forward = logical j1 0° (original 180°) |
+| j2 | Nema 17 | infinite | | 21:1 (design value; reconfirmed by engineer 2026-11-07) | | |
 | j3 | 25kg Hobby | 180 | | 1:1 | | |
 | j4 | 25kg Hobby | 180 | | 1:1 | | |
-| j5 | 25kg Hobby | 180 | | Rack and pinion system | | |
+| j5 | MS62 | 180 nominal servo travel | 970 closed / 2500 open (measured) | Rack and pinion system | GPIO33 | Logical j5 0° maps to 1735 µs, not 1500 µs |
+
+Base update (2026-11-07): user reports 1500 µs straight forward and 2×
+joint travel, giving ±180° base travel from ±90° servo travel. User measured
+1500 → 1000 µs as +90° CCW viewed from above (12 o'clock → 9 o'clock),
+establishing the base mapping 1500 µs − 5.555555 µs/degree × logical j1.
+The implied **11.111 µs per servo degree** already pins the 180° servo variant
+(a 270° unit would be ~7.41), and the user has now bench-tested the full ±180°
+travel at both 500 and 2500 µs ends. See README calibration notes.
+
+Gripper update (2026-11-07): user reports 970 µs fully closed and 2500 µs
+fully open. Generated j5 −90°/+90° encode closed/open, not actual finger angles.
+The mapping is 1735 µs + 8.5 µs/degree × logical j5; logical home is 1735 µs.
+`board_config.h` now narrows the gripper hard window to 970–2500 µs and supplies
+this measured mapping for fresh calibration. Saved measured mappings still win.
+In an existing disarmed bench draft use `set gripper 1735 8.5`; the tightened
+hard window takes effect only after reflashing.
+
+Camera servo (j6, 2026-11-07): user reports **1:1**, 180° of travel over
+500–2500 µs, so **90° looks straight forward** (1500 µs) and the scale is
+**+11.111 µs/degree**. It is mounted to turn the opposite way from the base
+(CW where the base turns CCW), which is the opposite sign to the base's
+−5.5556 µs/degree. The firmware's existing 0–180° → 500–2500 µs mapping already
+matches this; only the convention is recorded. The 0°/180° ends are the servo's
+own travel and are not mechanically verified.
+
+Stepper bench record (2026-11-07): command configuration was
+`200 4 21 0 0 1700 0.11` (full steps/rev, microsteps, assumed ratio,
+motor direction, encoder direction, mA RMS, Rsense Ω). These are the settings
+used, not independent verification of motor/driver electrical ratings.
+Start: raw/counts 7519, step counter 0. Final settled sample:
+raw 2329, unwrapped counts 84249, step counter 3750.
+Thus Δcounts = 76730, corresponding to 4.683227539 motor revolutions.
+The existing fitter gives 200.182458 effective full steps/rev at 1/4 stepping,
+consistent overall with nominal 200. User observed downward elbow motion,
+establishing motor direction +1 and encoder direction +1 under the existing
+positive-down convention; the reverse direction was later bench-tested and works.
+
+The mechanical engineer reconfirmed **21:1** on 2026-11-07, and a bubble-level
+check agrees. `step 500` at 1/4 stepping (0.625 motor revolutions) moved the
+elbow about **10.5°**; 21:1 predicts **10.714°** (−2%), while 18.73:1 and
+16.86:1 would predict 12.01° and 13.35°. The implied ratio from 10.5° is
+21.43:1, and a ±0.5° reading error spans 20.45:1–22.50:1, so **21:1 stands**.
+The earlier rough 90–100° estimate was an overestimate: the completed
+3750-microstep trial is **80.36°** at 21:1. Total gearing is therefore settled
+to within a few percent; the encoder count check already confirmed the motor
+side (200 full steps/rev, 1/4 microstepping) to 0.09%.
 
 - [ ] Any servo with position feedback (4th wire / serial bus servo)?
 - [ ] Is any servo mounted mirrored (turns opposite to the joint's positive direction)?
 
 J3 and J4 are in a differential setup, so the two servos both control pitch and roll
+
+Wrist observations supplied 2026-11-07 (A = GPIO14, B = GPIO32):
+
+| Pose | A (µs) | B (µs) | Observed angle |
+|---|---|---|---|
+| Straight, aligned with forearm | 1500 | 1500 | Pitch 0°, roll 0° |
+| Full pitch down, zero roll | 500 | 2500 | Pitch +90°, roll 0° |
+| Full pitch up, zero roll (collision stop) | 2200 | 800 | Pitch −63°, roll 0° |
+| Counterclockwise viewed from elbow toward gripper, no pitch change | 2500 | 2500 | Pitch 0°, logical roll −90° |
+| Clockwise viewed from elbow toward gripper, no pitch change | 500 | 500 | Pitch 0°, logical roll +90° |
+
+User observes CCW from elbow looking toward the gripper, which is negative roll
+under the existing right-hand convention about +X; (500,500) is 90° CW, logical
+roll +90°. Both roll directions agree exactly: 1000 µs per 90°, i.e.
+**11.1111 µs per degree**.
+
+All five poses fit the existing affine (1:2 differential) model exactly:
+
+```
+A_us = 1500 − 11.1111 × (roll + pitch)
+B_us = 1500 − 11.1111 × (roll − pitch)
+```
+
+Equivalently `set wrist 1500 -11.111111 -11.111111 1500 -11.111111 11.111111`.
+Differential PWM changes pitch; equal PWM changes roll. There is no need for a
+piecewise or non-linear model. An earlier note claiming the pitch slopes could
+not both be affine was wrong: it assumed the up endpoint was −90°.
+
+The servos are NOT at their own stops there; the user reports a collision, and
+that rotating one servo disproportionately (i.e. rolling) is still safe. So
+−63° is a collision limit on pitch only, independent of roll, and is now j3's
+lower limit in `arm.urdf`. Total measured pitch travel is 153° (not 180°).
+
+The real joint envelope is a **diamond**, not a rectangle. With A and B limited
+to ±90 servo degrees, A = −(roll+pitch) and B = pitch−roll imply
+**|roll| + |pitch| ≤ 90**. Rectangular corners such as (roll −90, pitch +90)
+would need B = 180° → 3500 µs, outside the window. Decided 2026-11-07: enforce
+the coupled diamond instead of shrinking the limits to fit.
+
+Implemented: `actuators::wristTiltSumDeg()` derives the diamond radius (90°)
+from the calibrated coefficients and pulse windows, `Arm` radially projects
+every commanded/settled wrist pose onto it, and `validate()` checks the diamond
+clipped by the j3/j4 limits rather than unreachable rectangle corners. Fresh
+firmware defaults now carry the measured wrist mapping. Save still requires
+valid stepper electrical parameters.
 
 ## 9. Power and e-stop
 

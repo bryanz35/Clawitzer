@@ -47,7 +47,7 @@
             </div>
             <span id="reference-state" class="state-label">Not referenced</span>
           </div>
-          <p>Normal motion requires a complete, saved valid calibration. With outputs disabled, manually align <strong>all axes to their generated home marks</strong>. Reference must be repeated after reset, power loss, e-stop or a reference fault.</p>
+          <p>Normal motion requires a complete, saved valid calibration (shipped in firmware). The controller references itself at power-up when the motor shaft still reads the angle recorded at the last marked-home reference. Otherwise — after a stop mid-motion, an e-stop or a fault — disable outputs, manually align <strong>all axes to their generated home marks</strong> and confirm here.</p>
           <label class="confirmation" for="reference-confirm">
             <input id="reference-confirm" type="checkbox" />
             <span>I have physically aligned every axis to its home mark, cleared the workspace and have the physical e-stop ready.</span>
@@ -121,8 +121,8 @@
             <dl class="keyboard-list">
               <div><dt>Base</dt><dd><kbd>Q</kbd> + <span aria-hidden="true">/</span> <kbd>A</kbd> −</dd></div>
               <div><dt>Elbow</dt><dd><kbd>W</kbd> + <span aria-hidden="true">/</span> <kbd>S</kbd> −</dd></div>
-              <div><dt>Forearm roll</dt><dd><kbd>E</kbd> + <span aria-hidden="true">/</span> <kbd>D</kbd> −</dd></div>
-              <div><dt>Wrist pitch</dt><dd><kbd>R</kbd> + <span aria-hidden="true">/</span> <kbd>F</kbd> −</dd></div>
+              <div><dt>Wrist pitch</dt><dd><kbd>E</kbd> + <span aria-hidden="true">/</span> <kbd>D</kbd> −</dd></div>
+              <div><dt>Wrist roll</dt><dd><kbd>R</kbd> + <span aria-hidden="true">/</span> <kbd>F</kbd> −</dd></div>
               <div><dt>Gripper</dt><dd><kbd>T</kbd> + <span aria-hidden="true">/</span> <kbd>G</kbd> −</dd></div>
             </dl>
             <p class="support-note"><kbd>Esc</kbd> requests a hold. Shortcuts are inactive while editing a field. A fresh input is required after a hold, disconnect or status interruption.</p>

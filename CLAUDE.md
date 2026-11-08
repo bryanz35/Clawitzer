@@ -64,7 +64,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 1. **Firmware enforces limits.** Joint position, velocity and acceleration limits live in firmware. Client-side clamping is additional, never a replacement.
 2. **Watchdog.** No valid command for **200 ms** → firmware holds position and reports `WATCHDOG`.
 3. **Deadman.** The arm follows only while the deadman gesture (pinch) is held. On release, it holds.
-4. **Soft start.** On boot, move slowly to the home pose. Ignore commands until homing completes.
+4. **Soft start.** On boot, move slowly to the home pose. Ignore commands until homing completes. Reference is restored automatically only when the motor-shaft encoder still reads the angle recorded at the last marked-home reference; any other reading still requires manual marked-home confirmation.
 5. **Tracking dropouts.** A null or invalid pose → hold the last good pose. Never interpolate from zero/origin.
 6. **Unreachable IK target.** Clamp to the nearest reachable pose. Reject solutions that jump more than `MAX_JOINT_STEP_DEG` per frame.
 7. **Bad input.** Drop commands with a bad CRC or a non-increasing sequence number.

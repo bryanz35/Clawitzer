@@ -109,6 +109,45 @@ static SerialController::Result cameraCommand(SerialController& serial, uint16_t
   return result;
 }
 
+void test_guarded_auto_reference_needs_the_recorded_home_angle() {
+  Config recorded = boardConfig();
+  recorded.homeRaw = 1234;
+
+  Arm matchedArm; BenchIO matchedIO; MemoryStore matchedStore;
+  matchedStore.saved = recorded;
+  matchedIO.raw = 1234;
+  CalibrationSession matched(matchedArm, matchedIO, matchedStore);
+  matched.begin(0);
+  TEST_ASSERT_TRUE(matched.normalReady());
+
+  // Powered down, then stopped somewhere else: the guard must refuse to assume home.
+  Arm movedArm; BenchIO movedIO; MemoryStore movedStore;
+  movedStore.saved = recorded;
+  movedIO.raw = static_cast<uint16_t>(1234 + 2000);
+  CalibrationSession moved(movedArm, movedIO, movedStore);
+  moved.begin(0);
+  TEST_ASSERT_FALSE(moved.normalReady());
+  TEST_ASSERT_TRUE(movedIO.stopped);
+}
+
+void test_reference_records_home_angle_for_the_next_boot() {
+  Arm arm; BenchIO io; MemoryStore store; store.present = false;
+  io.raw = 4321;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_FALSE(session.normalReady());
+  TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
+  TEST_ASSERT_TRUE(session.normalReady());
+  TEST_ASSERT_EQUAL_INT(4321, store.saved.homeRaw);
+
+  // Same shaft angle at the next boot is enough: no console or panel needed.
+  Arm rebootArm; BenchIO rebootIO;
+  rebootIO.raw = 4321;
+  CalibrationSession reboot(rebootArm, rebootIO, store);
+  reboot.begin(20);
+  TEST_ASSERT_TRUE(reboot.normalReady());
+}
+
 void test_camera_is_independent_and_still_obeys_estop() {
   Arm arm; BenchIO io; MemoryStore store; store.present = false;
   CalibrationSession session(arm, io, store); SerialController serial(arm, &session);
@@ -133,19 +172,21 @@ void test_camera_is_independent_and_still_obeys_estop() {
   TEST_ASSERT_FALSE(io.cameraActive());
 }
 
-void test_uncalibrated_boot_and_bad_consent_cannot_enable_outputs() {
+void test_fresh_boot_needs_only_marked_reference() {
   Arm arm; BenchIO io; MemoryStore store; store.present = false;
   CalibrationSession session(arm, io, store); SerialController serial(arm, &session);
   session.begin(0);
   session.tick(100, 0.01f);
   TEST_ASSERT_TRUE(io.stopped);
-  TEST_ASSERT_FALSE(io.configured);
+  TEST_ASSERT_FALSE(io.configured);  // Boot never drives outputs.
   TEST_ASSERT_EQUAL(SerialController::Result::Ignored, joints(serial, 100));
   TEST_ASSERT_EQUAL_UINT16(0, arm.lastSeq());
   TEST_ASSERT_FALSE(command(session, 1, "enter,yes", 100));
   TEST_ASSERT_FALSE(session.calibrating());
-  TEST_ASSERT_FALSE(command(session, 2, "reference,HOME_MARK_CONFIRMED", 110));
-  TEST_ASSERT_TRUE(io.stopped);
+  // Shipped measured defaults are already a valid calibration, so a fresh board needs the
+  // marked-home reference and nothing else.
+  TEST_ASSERT_TRUE(command(session, 2, "reference,HOME_MARK_CONFIRMED", 110));
+  TEST_ASSERT_TRUE(session.normalReady());
 }
 
 void test_bench_jogs_are_exclusive_bounded_and_lease_protected() {
@@ -345,25 +386,86 @@ void test_power_loss_requires_new_marked_reference_and_preserves_joint_sequence(
   TEST_ASSERT_EQUAL(SerialController::Result::Ignored, joints(serial, 90));
 }
 
-void test_encoder_following_and_read_faults_latch_outputs_off() {
+void test_single_encoder_glitch_is_ignored_without_shifting_the_reference() {
   Arm arm; BenchIO io; MemoryStore store;
   CalibrationSession session(arm, io, store); SerialController serial(arm, &session);
   session.begin(0);
   TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
   session.tick(20, 0.01f);
-  io.raw = 2100;  // 2000 motor counts -> >2 joint degrees at this explicitly configured gearing.
+  // 2000 counts in 10 ms is far faster than any legal motion: a corrupt sample.
+  io.raw = 2100;
   session.tick(30, 0.01f);
+  TEST_ASSERT_TRUE(session.normalReady());
+  TEST_ASSERT_FALSE(io.stopped);
+  io.raw = 100;
+  session.tick(40, 0.01f);
+  TEST_ASSERT_TRUE(session.normalReady());
+  float reported[ARM_NUM_JOINTS] = {};
+  session.reportedPosition(reported);
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, reported[ElbowPitch]);  // Not integrated.
+  TEST_ASSERT_EQUAL(SerialController::Result::Accepted, joints(serial, 50));
+}
+
+void test_sustained_encoder_read_faults_still_latch_after_debounce() {
+  Arm arm; BenchIO io; MemoryStore store;
+  CalibrationSession session(arm, io, store); SerialController serial(arm, &session);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
+  io.encoderOk = false;
+  for (int i = 0; i < 4; i++) session.tick(20 + i * 10, 0.01f);
+  TEST_ASSERT_TRUE(session.normalReady());  // A short burst is absorbed.
+  session.tick(60, 0.01f);
   TEST_ASSERT_FALSE(session.normalReady());
   TEST_ASSERT_TRUE(io.stopped);
   TEST_ASSERT_EQUAL(ArmState::Estop, arm.state());
-  TEST_ASSERT_EQUAL(SerialController::Result::Ignored, joints(serial, 40));
-  TEST_ASSERT_TRUE(command(session, 2, "reference,HOME_MARK_CONFIRMED", 50));
-  session.tick(60, 0.01f);
-  io.encoderOk = false;
-  session.tick(70, 0.01f);
-  TEST_ASSERT_TRUE(io.stopped);
+  TEST_ASSERT_EQUAL(SerialController::Result::Ignored, joints(serial, 70));
+  io.encoderOk = true;
+  TEST_ASSERT_TRUE(command(session, 2, "reference,HOME_MARK_CONFIRMED", 80));
+}
+
+void test_encoder_tolerates_a_small_limit_overshoot_but_latches_a_real_one() {
+  Arm arm; BenchIO io; MemoryStore store; store.present = false;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
+  const float degPerCount = 360.0f / (16384.0f * 21.0f);
+  // The AS5047P reports a 14-bit angle, so the simulated shaft must wrap at 16384.
+  const auto shaft = [&](int32_t extraCounts) {
+    const int64_t counts = 100 + lround(arm.positionDeg()[ElbowPitch] / degPerCount) + extraCounts;
+    return static_cast<uint16_t>(((counts % 16384) + 16384) % 16384);
+  };
+  float target[ARM_NUM_JOINTS] = {};
+  target[ElbowPitch] = ARM_JOINT_MAX_DEG[ElbowPitch];
+  uint16_t seq = 2;
+  uint32_t now = 20;
+  int32_t extra = 0;
+  session.tick(now, 0.01f);  // Finish reference homing before commands are accepted.
+  // Reach the limit with the encoder tracking the command exactly.
+  for (int i = 0; i < 120; i++) {
+    now += 10;
+    TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
+    io.raw = shaft(0);
+    session.tick(now, 0.01f);
+  }
+  TEST_ASSERT_TRUE(session.normalReady());
+  // Bumped ~3 deg past the limit: inside the margin, so no fault.
+  for (int i = 0; i < 10; i++) {
+    now += 10;
+    extra += 280;
+    TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
+    io.raw = shaft(extra);
+    session.tick(now, 0.01f);
+  }
+  TEST_ASSERT_TRUE(session.normalReady());
+  // Keep going past the margin: a real excursion still latches after the debounce.
+  for (int i = 0; i < 20 && session.normalReady(); i++) {
+    now += 10;
+    extra += 400;
+    TEST_ASSERT_TRUE(arm.setJointAngles(target, seq++, now));
+    io.raw = shaft(extra);
+    session.tick(now, 0.01f);
+  }
   TEST_ASSERT_FALSE(session.normalReady());
-  TEST_ASSERT_FALSE(command(session, 3, "reference,HOME_MARK_CONFIRMED", 80));
   TEST_ASSERT_TRUE(io.stopped);
 }
 
@@ -417,7 +519,9 @@ void test_fresh_flash_wrist_needs_no_motor_hardware_or_apply() {
   TEST_ASSERT_EQUAL_UINT(0, io.stepPositionReads);
   TEST_ASSERT_FALSE(session.normalReady());
   TEST_ASSERT_EQUAL(SerialController::Result::Ignored, joints(serial, 60));
-  TEST_ASSERT_FALSE(command(session, 7, "save", 60));
+  // Shipped defaults already validate, so a bench save now persists them; motion still
+  // requires the marked-home reference and working motor hardware.
+  TEST_ASSERT_TRUE(command(session, 7, "save", 60));
   TEST_ASSERT_TRUE(io.stopped);
   TEST_ASSERT_TRUE(command(session, 8, "exit", 70));
   TEST_ASSERT_EQUAL_UINT(1, io.configureCalls);
@@ -538,9 +642,34 @@ void test_explicit_wrist_arm_recovers_from_a_failed_full_encoder_setup() {
   TEST_ASSERT_FALSE(session.normalReady());
 }
 
+void test_gripper_bench_rejects_pulses_past_measured_closed_and_open() {
+  Arm arm; BenchIO io; MemoryStore store; store.present = false;
+  io.encoderOk = io.stepperOk = false;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
+  TEST_ASSERT_TRUE(command(session, 2, "arm,gripper", 20));
+  TEST_ASSERT_EQUAL_INT32(1735, io.pulse[Gripper]);
+  TEST_ASSERT_TRUE(command(session, 3, "pose,3,970", 40));
+  TEST_ASSERT_EQUAL_INT32(970, io.pulse[Gripper]);
+  TEST_ASSERT_FALSE(command(session, 4, "jog,3,-1", 60));
+  TEST_ASSERT_EQUAL_INT32(970, io.pulse[Gripper]);
+  TEST_ASSERT_FALSE(command(session, 5, "pose,3,969", 80));
+  TEST_ASSERT_EQUAL_INT32(970, io.pulse[Gripper]);
+  TEST_ASSERT_TRUE(command(session, 6, "pose,3,2500", 100));
+  TEST_ASSERT_EQUAL_INT32(2500, io.pulse[Gripper]);
+  TEST_ASSERT_FALSE(command(session, 7, "jog,3,1", 120));
+  TEST_ASSERT_FALSE(command(session, 8, "pose,3,2501", 140));
+  TEST_ASSERT_EQUAL_INT32(2500, io.pulse[Gripper]);
+  TEST_ASSERT_FALSE(session.normalReady());
+}
+
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_uncalibrated_boot_and_bad_consent_cannot_enable_outputs);
+  RUN_TEST(test_fresh_boot_needs_only_marked_reference);
+  RUN_TEST(test_guarded_auto_reference_needs_the_recorded_home_angle);
+  RUN_TEST(test_reference_records_home_angle_for_the_next_boot);
+  RUN_TEST(test_gripper_bench_rejects_pulses_past_measured_closed_and_open);
   RUN_TEST(test_camera_is_independent_and_still_obeys_estop);
   RUN_TEST(test_bench_jogs_are_exclusive_bounded_and_lease_protected);
   RUN_TEST(test_arbitrary_jog_amounts_stay_inside_the_hard_window);
@@ -550,7 +679,9 @@ int main() {
   RUN_TEST(test_long_step_requires_keepalives_and_estop_still_disables_it);
   RUN_TEST(test_save_is_validated_atomic_and_gear_is_persistent_not_fixed);
   RUN_TEST(test_power_loss_requires_new_marked_reference_and_preserves_joint_sequence);
-  RUN_TEST(test_encoder_following_and_read_faults_latch_outputs_off);
+  RUN_TEST(test_single_encoder_glitch_is_ignored_without_shifting_the_reference);
+  RUN_TEST(test_sustained_encoder_read_faults_still_latch_after_debounce);
+  RUN_TEST(test_encoder_tolerates_a_small_limit_overshoot_but_latches_a_real_one);
   RUN_TEST(test_calibration_sample_is_fresh_and_cannot_report_a_later_completed_step);
   RUN_TEST(test_fresh_flash_wrist_needs_no_motor_hardware_or_apply);
   RUN_TEST(test_compiled_hardware_overrides_loaded_hardware_and_rejects_serial_edits);

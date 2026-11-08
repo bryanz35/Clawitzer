@@ -133,6 +133,36 @@ void test_invalid_target_does_not_consume_sequence_or_feed_watchdog() {
   TEST_ASSERT_EQUAL(ArmState::Active, arm.state());
 }
 
+void test_wrist_coupling_projects_roll_and_pitch_onto_the_diamond() {
+  float target[ARM_NUM_JOINTS] = {};
+  target[2] = 90.0f;  // j3 wrist pitch
+  target[3] = 90.0f;  // j4 wrist roll
+
+  Arm coupled;
+  coupled.setWristCoupling(90.0f);
+  homeAt(coupled, 0.0f);
+  uint32_t t = run(coupled, 0, 1);
+  for (int i = 0; i < 400; i++) {
+    t += 10;
+    TEST_ASSERT_TRUE(coupled.setJointAngles(target, static_cast<uint16_t>(i + 1), t));
+    coupled.update(t, kDt);
+  }
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 45.0f, coupled.positionDeg()[2]);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 45.0f, coupled.positionDeg()[3]);
+
+  // Without a saved calibration the same command is only hit by the per-joint limits.
+  Arm uncoupled;
+  homeAt(uncoupled, 0.0f);
+  t = run(uncoupled, 0, 1);
+  for (int i = 0; i < 400; i++) {
+    t += 10;
+    TEST_ASSERT_TRUE(uncoupled.setJointAngles(target, static_cast<uint16_t>(i + 1), t));
+    uncoupled.update(t, kDt);
+  }
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 90.0f, uncoupled.positionDeg()[2]);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 90.0f, uncoupled.positionDeg()[3]);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_homing_ignores_commands_and_moves_slowly);
@@ -141,5 +171,6 @@ int main() {
   RUN_TEST(test_estop_holds_then_rehomes);
   RUN_TEST(test_sequences_wrap_and_survive_estop_rehoming);
   RUN_TEST(test_invalid_target_does_not_consume_sequence_or_feed_watchdog);
+  RUN_TEST(test_wrist_coupling_projects_roll_and_pitch_onto_the_diamond);
   return UNITY_END();
 }

@@ -2,6 +2,10 @@
 
 #include <math.h>
 
+// Canonical joint order from arm_config.h: j1 base, j2 elbow, j3 wrist pitch, j4 wrist roll.
+static constexpr int kWristPitchJoint = 2;
+static constexpr int kWristRollJoint = 3;
+
 const char* armStateName(ArmState s) {
   switch (s) {
     case ArmState::Homing: return "HOMING";
@@ -19,6 +23,8 @@ void Arm::begin(const float startDeg[ARM_NUM_JOINTS], uint32_t nowMs) {
     vel_[i] = 0.0f;
     target_[i] = clampf(ARM_HOME_DEG[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
   }
+  clampWrist(pos_);
+  clampWrist(target_);
   haveSeq_ = false;
   lastSeq_ = 0;
   lastCmdMs_ = nowMs;
@@ -48,6 +54,7 @@ bool Arm::setJointAngles(const float deg[ARM_NUM_JOINTS], uint16_t seq, uint32_t
   for (int i = 0; i < ARM_NUM_JOINTS; i++) {
     target_[i] = clampf(deg[i], ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
   }
+  clampWrist(target_);
   if (state_ != ArmState::Active) transition(ArmState::Active);
   return true;
 }
@@ -95,8 +102,20 @@ void Arm::update(uint32_t nowMs, float dtSec) {
 
     if (fabsf(pos_[i] - ARM_HOME_DEG[i]) > kHomeToleranceDeg) atHome = false;
   }
+  clampWrist(pos_);
 
   if (state_ == ArmState::Homing && atHome) transition(ArmState::Idle);
+}
+
+void Arm::clampWrist(float pose[ARM_NUM_JOINTS]) const {
+  if (!(wristSumMaxDeg_ > 0.0f)) return;
+  const float sum = fabsf(pose[kWristPitchJoint]) + fabsf(pose[kWristRollJoint]);
+  if (!(sum > wristSumMaxDeg_)) return;
+  // Radial projection keeps the commanded roll:pitch ratio. Both joint limits contain zero,
+  // so scaling toward the origin cannot leave them.
+  const float scale = wristSumMaxDeg_ / sum;
+  pose[kWristPitchJoint] *= scale;
+  pose[kWristRollJoint] *= scale;
 }
 
 void Arm::brake() {
@@ -105,6 +124,7 @@ void Arm::brake() {
     const float stop = vel_[i] * fabsf(vel_[i]) / (2.0f * ARM_JOINT_MAX_ACCEL_DEG_S2[i]);
     target_[i] = clampf(pos_[i] + stop, ARM_JOINT_MIN_DEG[i], ARM_JOINT_MAX_DEG[i]);
   }
+  clampWrist(target_);
 }
 
 void Arm::hold() {
@@ -112,6 +132,7 @@ void Arm::hold() {
     target_[i] = pos_[i];
     vel_[i] = 0.0f;
   }
+  clampWrist(target_);
 }
 
 void Arm::transition(ArmState to) {

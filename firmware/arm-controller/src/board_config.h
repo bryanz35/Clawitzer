@@ -5,8 +5,11 @@
 namespace actuators {
 
 // Independent camera-servo output. This is not an arm joint, IK axis or calibrated mapping.
-// 0–180° maps linearly to the nominal 500–2500 µs window; verify the actual servo before
-// installing it, because many hobby servos bind before one or both nominal endpoints.
+// Measured 2026-11-07: 1:1 gearing, 180 deg of travel over 500-2500 us, so 90 deg (1500 us)
+// looks straight forward and the scale is +11.111 us/deg. That is the opposite sense to the
+// base (-5.5556 us/deg): the mount turns the other way, so increasing camera angle and
+// increasing j1 rotate in opposite directions. Endpoints are the servo's own travel and are
+// not independently measured; check for binding before using 0 or 180 deg.
 inline constexpr int32_t kCameraServoPin = 21;
 inline constexpr int32_t kCameraMinUs = 500;
 inline constexpr int32_t kCameraMaxUs = 2500;
@@ -24,6 +27,26 @@ inline Config boardConfig() {
     config.servo[i].maxUs = 2500;
     config.servo[i].centerUs = 1500;
   }
+  // Nominal DS3235-180 base: 180° servo travel drives 360° joint travel.
+  // 1500 µs is straight forward (j1=0), not an absolute servo-angle label.
+  // Measured: 1500→1000 µs turns +90° CCW viewed from above. Saved NVS values win.
+  config.servo[Base].usPerDeg = (500.0f - 2500.0f) / (180.0f * 2.0f);
+  // Measured gripper endpoints: generated lower = closed, upper = open.
+  config.servo[Gripper].minUs = 970;
+  config.servo[Gripper].usPerDeg =
+      static_cast<float>(config.servo[Gripper].maxUs - config.servo[Gripper].minUs) /
+      (ARM_JOINT_MAX_DEG[Grip] - ARM_JOINT_MIN_DEG[Grip]);
+  config.servo[Gripper].centerUs =
+      config.servo[Gripper].minUs - config.servo[Gripper].usPerDeg * ARM_JOINT_MIN_DEG[Grip];
+  // Measured 1:2 differential wrist (2026-11-07): A = 1500 - k(roll + pitch),
+  // B = 1500 - k(roll - pitch), k = 2000 us / 180 deg. Its reachable set is the diamond
+  // |roll| + |pitch| <= 90 deg, which Arm enforces and validate() checks. Saved NVS wins.
+  const float wristUsPerDeg = (2500.0f - 500.0f) / 180.0f;
+  config.servo[WristA].centerUs = 1500;
+  config.servo[WristB].centerUs = 1500;
+  config.wristRollUsPerDeg[0] = config.wristPitchUsPerDeg[0] = -wristUsPerDeg;
+  config.wristRollUsPerDeg[1] = -wristUsPerDeg;
+  config.wristPitchUsPerDeg[1] = wristUsPerDeg;
   config.pins.step = 18;
   config.pins.direction = 19;
   config.pins.enable = 23;
@@ -35,10 +58,24 @@ inline Config boardConfig() {
   config.pins.spiCs = 27;
   config.pins.estop = 35;
   config.pins.estopActiveLevel = 0;
+  // 21:1 design reduction, reconfirmed by the mechanical engineer 2026-11-07.
+  // Bench check with a bubble level: step 500 (0.625 motor rev) moved the elbow
+  // about 10.5 deg; this ratio predicts 10.71 deg.
   config.gearRatio = 21;
-  config.microsteps = 16;
-  // Full steps/rev, current, Rsense, directions, following error and angle
-  // coefficients remain unverified (zero) until explicitly supplied.
+  // Measured 2026-11-07 (bench trial, encoder-verified): 200 full steps/rev at 1/4
+  // microstepping, +3750 microsteps -> 4.683 motor revs with the elbow moving DOWN,
+  // so both directions are +1. 1700 mA / 0.11 ohm accepted by the team.
+  config.motorStepsPerRev = 200;
+  config.microsteps = 4;
+  config.motorDirection = 1;
+  config.encoderDirection = 1;
+  config.currentMa = 1700;
+  config.senseResistorOhm = 0.11f;
+  config.followingErrorDeg = 2;
+  // These are ship-ready measured defaults, not placeholders: a fresh flash validates
+  // without a bench session, and normal motion then needs only the marked-home reference
+  // (the motor-shaft encoder cannot resolve absolute elbow position). Saved NVS values
+  // still win, so re-measuring stays possible. UART address stays 0.
   return config;
 }
 

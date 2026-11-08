@@ -350,20 +350,22 @@ void test_encoder_rejects_invalid_and_half_turn_samples_without_mutation() {
   TEST_ASSERT_TRUE(isnan(encoder.jointDeg(config)));
 }
 
-void test_compiled_board_allows_raw_wrist_without_unverified_stepper_values() {
+void test_compiled_board_ships_calibrated_and_raw_bench_ignores_mapping() {
   Config config = boardConfig();
   TEST_ASSERT_TRUE(validateBench(config, 6, nullptr, 0));
-  TEST_ASSERT_FALSE(validateSetup(config, nullptr, 0));
-  TEST_ASSERT_FALSE(validate(config, nullptr, 0));
+  TEST_ASSERT_TRUE(validateSetup(config, nullptr, 0));
+  TEST_ASSERT_TRUE(validate(config, nullptr, 0));  // Ships ready: no bench save required.
   TEST_ASSERT_EQUAL_FLOAT(21, config.gearRatio);
-  TEST_ASSERT_EQUAL_UINT32(16, config.microsteps);
-  TEST_ASSERT_EQUAL_FLOAT(0, config.currentMa);
-  TEST_ASSERT_EQUAL_FLOAT(0, config.motorStepsPerRev);
-  for (size_t i = 0; i < kServoCount; ++i) {
-    TEST_ASSERT_EQUAL_INT32(500, config.servo[i].minUs);
-    TEST_ASSERT_EQUAL_INT32(2500, config.servo[i].maxUs);
-    TEST_ASSERT_EQUAL_FLOAT(1500, config.servo[i].centerUs);
-  }
+  TEST_ASSERT_EQUAL_UINT32(4, config.microsteps);
+  TEST_ASSERT_EQUAL_FLOAT(200, config.motorStepsPerRev);
+  TEST_ASSERT_EQUAL_INT32(1, config.motorDirection);
+  TEST_ASSERT_EQUAL_INT32(1, config.encoderDirection);
+  TEST_ASSERT_EQUAL_FLOAT(1700, config.currentMa);
+  TEST_ASSERT_EQUAL_FLOAT(0.11f, config.senseResistorOhm);
+  TEST_ASSERT_EQUAL_FLOAT(2, config.followingErrorDeg);
+  TEST_ASSERT_EQUAL_INT32(970, config.servo[Gripper].minUs);
+  TEST_ASSERT_EQUAL_FLOAT(1735, config.servo[Gripper].centerUs);
+  // Raw PWM bench work must not need any mapping or motor measurement.
   config.motorStepsPerRev = config.currentMa = config.senseResistorOhm = NAN;
   config.followingErrorDeg = config.gearRatio = NAN;
   config.servo[Base].centerUs = NAN;
@@ -386,6 +388,71 @@ void test_compiled_board_allows_raw_wrist_without_unverified_stepper_values() {
   TEST_ASSERT_FALSE(validateBench(config, 0x80, nullptr, 0));
   config.pins.estop = config.pins.servo[WristA];
   TEST_ASSERT_FALSE(validateBench(config, 6, nullptr, 0));
+}
+
+void test_geared_base_maps_full_travel_about_forward_without_wrapping() {
+  const Config board = boardConfig();
+  TEST_ASSERT_TRUE(validate(board, nullptr, 0));  // The compiled board is fully calibrated.
+  Config config = calibrated();
+  config.servo[Base] = board.servo[Base];
+  const float degrees[] = {-180, -90, 0, 90, 180};
+  const int32_t pulses[] = {2500, 2000, 1500, 1000, 500};
+  for (int direction = -1; direction <= 1; direction += 2) {
+    config.servo[Base].usPerDeg = board.servo[Base].usPerDeg * direction;
+    TEST_ASSERT_TRUE(validate(config, nullptr, 0));  // Includes every envelope corner.
+    for (size_t i = 0; i < 5; ++i) {
+      float deg[ARM_NUM_JOINTS] = {};
+      deg[BaseYaw] = degrees[i];
+      Targets target;
+      TEST_ASSERT_TRUE(map(config, deg, target));
+      TEST_ASSERT_EQUAL_INT32(pulses[direction == 1 ? i : 4 - i], target.pulseUs[Base]);
+    }
+    float deg[ARM_NUM_JOINTS] = {};
+    Targets target;
+    deg[BaseYaw] = -180.01f;
+    TEST_ASSERT_FALSE(map(config, deg, target));
+    deg[BaseYaw] = 180.01f;
+    TEST_ASSERT_FALSE(map(config, deg, target));
+  }
+}
+
+void test_measured_gripper_maps_closed_midpoint_and_open_without_overtravel() {
+  Config config = calibrated();
+  config.servo[Gripper] = boardConfig().servo[Gripper];
+  TEST_ASSERT_TRUE(validate(config, nullptr, 0));
+  const float angles[] = {-90, 0, 90};
+  const int32_t pulses[] = {970, 1735, 2500};
+  for (size_t i = 0; i < 3; ++i) {
+    float deg[ARM_NUM_JOINTS] = {};
+    deg[Grip] = angles[i];
+    Targets target;
+    TEST_ASSERT_TRUE(map(config, deg, target));
+    TEST_ASSERT_EQUAL_INT32(pulses[i], target.pulseUs[Gripper]);
+  }
+}
+
+void test_symmetric_differential_wrist_uses_coupled_diamond() {
+  Config config = boardConfig();
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 90.0f, wristTiltSumDeg(config));
+  TEST_ASSERT_TRUE(validate(config, nullptr, 0));
+  float deg[ARM_NUM_JOINTS] = {};
+  Targets target;
+  deg[WristRoll] = 45;
+  deg[WristPitch] = 45;
+  TEST_ASSERT_TRUE(map(config, deg, target));  // On the diamond boundary.
+  TEST_ASSERT_EQUAL_INT32(500, target.pulseUs[WristA]);
+  TEST_ASSERT_EQUAL_INT32(1500, target.pulseUs[WristB]);
+  deg[WristRoll] = 90;
+  deg[WristPitch] = 90;
+  TEST_ASSERT_FALSE(map(config, deg, target));  // Unreachable rectangle corner.
+  deg[WristRoll] = -27;
+  deg[WristPitch] = ARM_JOINT_MIN_DEG[WristPitch];  // Roll survives at the collision stop.
+  TEST_ASSERT_TRUE(map(config, deg, target));
+  TEST_ASSERT_EQUAL_INT32(2500, target.pulseUs[WristA]);
+  TEST_ASSERT_EQUAL_INT32(1100, target.pulseUs[WristB]);
+  Config asymmetric = config;
+  asymmetric.wristPitchUsPerDeg[0] = -4;
+  TEST_ASSERT_EQUAL_FLOAT(0, wristTiltSumDeg(asymmetric));  // Falls back to rectangles.
 }
 
 void test_persisted_values_cannot_restore_old_board_pins_or_hard_windows() {
@@ -427,7 +494,10 @@ int main() {
   RUN_TEST(test_encoder_requires_reference_and_unwraps_both_directions);
   RUN_TEST(test_encoder_tracks_multiple_revolutions_and_configured_output_gearing);
   RUN_TEST(test_encoder_rejects_invalid_and_half_turn_samples_without_mutation);
-  RUN_TEST(test_compiled_board_allows_raw_wrist_without_unverified_stepper_values);
+  RUN_TEST(test_compiled_board_ships_calibrated_and_raw_bench_ignores_mapping);
+  RUN_TEST(test_geared_base_maps_full_travel_about_forward_without_wrapping);
+  RUN_TEST(test_measured_gripper_maps_closed_midpoint_and_open_without_overtravel);
+  RUN_TEST(test_symmetric_differential_wrist_uses_coupled_diamond);
   RUN_TEST(test_persisted_values_cannot_restore_old_board_pins_or_hard_windows);
   return UNITY_END();
 }

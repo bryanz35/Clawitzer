@@ -148,14 +148,18 @@ Web Serial needs `localhost` (or another secure context); Quest Browser, the
 Android app and other serial programs cannot share the port. Close the
 calibration CLI before connecting.
 
-Normal motion still requires a **saved valid full-arm calibration** and a
-**manual marked-home reference after every reset**. The panel cannot create or
-save calibration. `Connect` only opens the port; `Confirm reference & home`
-starts firmware homing only after the home-mark acknowledgement. The status
-panel explains which prerequisite blocks motion.
+The firmware ships with the measured calibration compiled in, so a fresh flash
+already reports `Saved / valid`. **Reference is automatic at power-up** when the
+motor-shaft encoder still reads the angle recorded at the last marked-home
+reference (the arm parked where it always starts). Anything else — a stop
+mid-motion, an e-stop or a fault that left the elbow elsewhere — keeps the
+manual path: align every axis to its home mark, tick the acknowledgement and use
+`Confirm reference & home`. The panel cannot create or save calibration; that is
+only needed when re-measuring, through the bench console and NVS. `Connect` only
+opens the port.
 
 Hold `Space` plus `Q`/`A`, `W`/`S`, `E`/`D`, `R`/`F`, `T`/`G` for base, elbow,
-forearm roll, wrist pitch and gripper; or hold a `−`/`+` button with the mouse
+wrist pitch, wrist roll and gripper; or hold a `−`/`+` button with the mouse
 (`Enter` works on a focused button). Releasing, pressing `Esc`, leaving the
 window or losing telemetry requests a hold at the latest reported pose and stops
 streaming. There is no automatic resume. The speed slider is a fraction of each
@@ -172,8 +176,16 @@ reopening may reset the board and clear its reference.
 The **j6 camera** slider is an independent 0–180° PWM servo on GPIO21. It is
 not an arm joint, has no URDF/IK/calibration entry, and does not require saved
 calibration or reference. It still uses the firmware e-stop input and is
-disabled by `halt`/e-stop. The nominal 500–2500 µs endpoints are not measured;
-check the actual servo for binding before using 0° or 180°.
+disabled by `halt`/e-stop.
+
+Measured convention (2026-11-07): **1:1**, 500–2500 µs over **180°**, so
+**90° = looking forward** (1500 µs) and the scale is **+11.111 µs/degree**.
+That is the opposite sign to the base (−5.5556 µs/degree): the camera is
+mounted to turn the other way, so increasing camera angle and increasing `j1`
+turn in opposite directions. The full 180° endpoints are the servo's own
+travel and are still unmeasured mechanically — check for binding before using
+0° or 180°. If the slider turns the wrong way on the bench, the convention is a
+single sign flip in `board_config.h`, which requires reflashing.
 
 ### Mixed actuators and bench calibration
 
@@ -229,6 +241,42 @@ exact board and module schematics before connecting power.
   reads LOW and stops motion. Internal pulls cannot provide this bias on classic ESP32
   GPIO34–39. If changing the active level/pin, provide an external bias toward **stop**.
 
+#### Base mapping: DS3235-180 with 2× joint travel
+
+Bench information supplied 2026-11-07: the base uses 500–2500 µs PWM, with
+1500 µs pointing the arm straight forward. The stated 2:1 gearing means **joint
+travel is twice servo travel** here (servo:joint angular travel = 1:2), not a
+2:1 reduction. Assuming the 180° servo variant, shaft travel is ±90° about
+neutral and base travel is ±180° about forward, 360° total.
+
+The [DS3235 datasheet](https://hajim.rochester.edu/me/sites/kelley/me240/DS3235-270_datasheet.pdf)
+specifies 1500 µs neutral and **180° or 270° variants** over 500–2500 µs; it
+does not assign the arm's zero. A 0–180° servo label places neutral at 90°.
+Our logical `j1=0°` is straight forward (mechanical's original 180° label).
+The installed 180° variant and safe physical endpoints still need verification.
+The user measured 1500 → 1000 µs as a 90° CCW rotation viewed from above
+(12 o'clock → 9 o'clock), confirming negative PWM slope for positive `j1`.
+
+Fresh firmware calibration defaults to `pulse_us = 1500 - j1_deg × (2000/360)`,
+about **−5.555555 µs per joint degree**: +90° → 1000 µs matches that measurement,
+and both −180° → 2500 µs and +180° → 500 µs are now bench-verified.
+
+All measured mappings ship as code defaults in `board_config.h`: base, the 1:2
+differential wrist, the gripper (970–2500 µs), 200 full steps/rev at **1/4
+microstepping**, 21:1, motor/encoder directions +1, 1700 mA RMS, 0.11 Ω and a 2°
+following tolerance. **A fresh flash is fully calibrated**, so normal motion
+needs only the marked-home reference. A bench session remains for re-measuring,
+and saved NVS values take precedence over the compiled defaults.
+
+Saved NVS measurements override the default; reflashing does not overwrite them.
+In an existing disarmed bench session, `set base 1500 -5.555555` applies the
+measured center, scale and direction without resetting the other draft measurements.
+Do not repeat
+`enter` just to change the base: it discards unsaved draft measurements.
+`measure base` can replace the nominal mapping with actual measured angles.
+The existing generated ±180° limits and cable-wrap boundary are unchanged;
+the two endpoint headings must never be treated as a wraparound shortcut.
+
 After `npm install`, with linkage unloaded/disconnected and the physical e-stop available:
 
 ```sh
@@ -247,8 +295,9 @@ calibrate> b- 250
 current A/B pulses. Each `a+`/`a-`/`b+`/`b-` sends **one integer pulse step** — 5 µs
 when no amount is given, or the explicit amount (`a+ 100`). After `arm base` or
 `arm gripper`, `base+`/`base-` and `grip+`/`grip-` do the same for those channels.
-Any nonzero step up to ±2000 µs is accepted, but the result must stay inside the
-code-owned 500–2500 µs window; otherwise the firmware rejects it and nothing moves.
+Any nonzero step up to ±2000 µs is accepted, but the result must stay inside its
+code-owned window: 500–2500 µs for base/wrist, 970–2500 µs for the gripper.
+Otherwise the firmware rejects it and nothing moves.
 A/B are raw channels, not assumed roll/pitch directions; find the differential pairs
 empirically. There is no automatic sweep and no retry.
 
@@ -261,16 +310,73 @@ calibrate> wrist 1600 1400
 That validates both pulses before writing either, so a rejected tilt moves nothing.
 `pose 1 1600 2 1400` does the same for any armed scope (base 0, A 1, B 2, gripper 3).
 
+Wrist calibration (2026-11-07). Measured poses, with the arm viewed from elbow
+toward gripper:
+
+| Pose | A µs | B µs |
+|---|---:|---:|
+| Straight | 1500 | 1500 |
+| Pitch down +90° | 500 | 2500 |
+| Pitch up, mechanical stop | 2200 | 800 |
+| Roll 90° CCW (−90°) | 2500 | 2500 |
+| Roll 90° CW (+90°) | 500 | 500 |
+
+Both roll directions agree on 1000 µs per 90°, and all five poses fit the
+existing 1:2 differential model exactly:
+
+```
+A = 1500 − 11.1111 × (roll + pitch)
+B = 1500 − 11.1111 × (roll − pitch)
+```
+
+```text
+set wrist 1500 -11.111111 -11.111111 1500 -11.111111 11.111111
+```
+
+An earlier note in this file claimed a single affine pitch slope could not fit
+both endpoints; that was wrong, because it assumed the up endpoint was −90°.
+The servos are in fact not at their stops there: tilting past **−63°** collides,
+so that is now j3's lower limit in `arm.urdf` (regenerated into `arm_config.h`),
+while roll may still move at that pitch. Measured pitch travel is 153°.
+
+The reachable wrist region is a **diamond, not a rectangle**: A and B are
+limited to ±90° servo travel, so `|roll| + |pitch| ≤ 90`. Corners such as
+(roll −90°, pitch +90°) would need 3500 µs and are impossible. Firmware now
+enforces this coupling: `Arm` radially projects every commanded wrist pose onto
+the diamond, and `save` validates the *diamond clipped by the j3/j4 limits*
+instead of the unreachable rectangle corners (`wristTiltSumDeg()` returns the
+coupled limit, 0 when the calibration is not a symmetric differential).
+The projection keeps the commanded roll:pitch ratio.
+
 There is no setup wizard. Pins, e-stop polarity and the hard pulse windows live in
-`board_config.h`. The current defaults assume a **full 500–2500 µs range with a
-1500 µs center for every servo**. That is a safe-ish placeholder, not verified
-mechanical travel or a learned angle mapping: arming can jump a servo to 1500 µs,
-so watch the mechanism and keep the e-stop reachable.
+`board_config.h`. Base/wrist defaults retain **500–2500 µs windows and 1500 µs
+centers**; their combined mechanical clearance is not established by those windows.
+The measured gripper window is **970–2500 µs**, with a **1735 µs center**.
+Saved calibration can override centers. Arming can jump to the configured center:
+inspect `get pulse INDEX` first, watch the mechanism and keep the e-stop reachable.
 
 Wrist bench mode needs no TMC, encoder or stepper configuration. Once those are
 wired, the optional `measure base|wrist|gripper|stepper` helpers are available,
 and `save` still validates the full generated joint-limit envelope before committing
 NVS. Only discovered mappings persist; code-owned hardware is never restored from NVS.
+
+Gripper measurements (2026-11-07): **970 µs fully closed, 2500 µs fully open**.
+Generated `j5` lower/upper limits (−90°/+90°) are logical closure coordinates,
+not measured finger angles. The resulting affine mapping is
+`pulse_us = 1735 + 8.5 × j5_deg`; logical home (`j5=0°`) maps to 1735 µs.
+Fresh calibration uses these values; existing saved mappings take precedence.
+To update the current bench draft without losing other measurements:
+
+```text
+disarm
+set gripper 1735 8.5
+```
+
+This only updates the draft and does not move the gripper. The code-owned
+970 µs hard minimum requires reflashing; an already running older firmware
+still permits its previous raw window, so do not jog below the measured closed
+position. `save` still requires a valid full-arm mapping; wrist calibration
+support and stepper verification remain separate prerequisites.
 
 The program starts at an interactive prompt; calibration does not begin automatically.
 Bench mode deliberately reports `ESTOP` because normal joint motion is blocked.
@@ -282,6 +388,36 @@ Guided measurements use explicit integer pulse steps (no automatic sweep): two m
 angles, three independent measured roll/pitch poses for the differential matrix, and actual
 gripper closed/open positions. A separately confirmed short stepper jog compares emitted
 microsteps to encoder motion to estimate effective steps/revolution and direction.
+
+**Measured stepper trial (2026-11-07).** `set stepper 200 4 21 0 0 1700 0.11`
+then `arm stepper`; accumulated `step 250/500/1000` moves to counter 3750.
+Settled encoder samples went from raw 7519 to raw 2329 with unwrapped counts
+7519 → 84249, i.e. **Δcounts = 76730 = 4.68323 motor revolutions**. The fitter
+gives **200.18 effective full steps/rev** at 1/4 stepping, consistent with a
+nominal 200-step motor, and the arm moved **downward**, so
+**motor direction +1 / encoder direction +1** (positive `j2` is downward).
+
+The engineer reconfirmed the **21:1** reduction. A bubble-level check agrees:
+`step 500` at 1/4 stepping (0.625 motor revolutions) moved the elbow about
+**10.5°**, against **10.71°** predicted here (−2%). The 90–100° eyeball estimate
+was an overestimate; the completed 3750-microstep trial is **80.36°** at 21:1.
+An 18.73:1 gearbox would have produced 12.01°, so the ratio is settled to a few
+percent. Raw record is in `docs/questions.md`.
+
+These values — `200 4 21 1 1 1700 0.11` plus `set following 2` — are compiled into
+`board_config.h` as ship-ready defaults, so a fresh flash needs no bench session.
+Only re-measure if the hardware changes; NVS then wins. 1700 mA is the recorded
+stall-torque investigation value, retained by team decision.
+
+**Encoder fault policy (2026-11-07).** Single bad samples no longer disable the arm:
+
+- A shaft jump faster than any legal motion is **discarded**, not integrated, so it cannot silently shift the reference. (At 100 Hz the bound is ~600 counts, vs ~273 counts at full joint speed.)
+- `following_error`, `encoder_joint_limit` and read failures latch only after **5 consecutive** bad samples (~50 ms).
+- A bump up to **5° past a joint limit** is tolerated and is not also counted as following error; beyond that margin `encoder_joint_limit` latches.
+
+A latched fault still disables outputs and clears the reference, so recovery is the marked-home reference (or the automatic one on the next boot if the shaft angle matches).
+
+
 Raw `step N` accepts a nonzero signed 32-bit integer relative move at
 1000 microsteps/s. The user-approved unloaded bench exception has **no fixed
 microstep-count or motor-angle travel cap**. The delta and resulting counter
@@ -307,41 +443,50 @@ The 200 ms bench lease disables outputs if host keepalives stop. This isolated b
 is the only approved exception to normal homing/joint-angle enforcement.
 
 `save` validates the full generated joint-limit envelope before committing NVS.
-If a differential corner exceeds a servo's code-configured travel window, saving fails
-rather than clipping the two motors independently. The 500–2500 µs defaults are a
-placeholder: measure real safe travel and edit `board_config.h`, or ask the team to
+A differential wrist calibration is checked over its reachable diamond, so saving
+fails only if a reachable extreme leaves a servo's code-configured window; it never
+clips the two motors independently. The base/wrist 500–2500 µs
+windows remain placeholders; the gripper uses measured 970–2500 µs endpoints.
+Measure remaining safe travel and edit `board_config.h`, or ask the team to
 review the URDF limits. The calibration console never edits generated joint limits and
 cannot change hard windows over serial.
 
 #### Full-arm calibration checklist
 
-There is no single wizard. `save` succeeds only after the four measured mappings and the
-independently verified stepper parameters are all present. Work unloaded/disconnected,
-with the physical power e-stop ready, and stop before any binding.
+There is no single wizard. `save` succeeds only after all four mappings and the
+stepper parameters are present — which the compiled defaults already satisfy, so
+`save` on a fresh board just persists them. Re-measure only when hardware changes,
+work unloaded/disconnected, with the physical power e-stop ready, and stop before
+any binding.
 
 1. Start the CLI, type `enter`, and give the exact `UNLOADED_ESTOP_READY` acknowledgement.
-2. Set only independently known stepper values, leaving directions at zero for now:
-   `set stepper 200 4 21 0 0 800 0.11` means 200 full steps/rev, 1/4 microstepping,
-   21:1 gearing, 800 mA RMS and a 0.11 Ω sense resistor. Substitute verified hardware
-   values; then set a starting following tolerance with `set following 2`.
-   Pins, e-stop polarity and the 500–2500 µs pulse windows are read-only.
+2. The ship-ready stepper values are `200 4 21 1 1 1700 0.11` with `set following 2`:
+   200 full steps/rev, 1/4 microstepping, 21:1 gearing, positive motor/encoder
+   directions, 1700 mA RMS, 0.11 Ω, 2° following tolerance. Set them only to change
+   something; leaving directions at zero is no longer needed. Pins, e-stop polarity
+   and per-servo hard pulse windows are read-only.
 3. `measure stepper` — choose a short, explicit trial with known clearance. After it
    disarms, state whether positive steps moved toward positive `j2` (`+1`) or negative
    `j2` (`-1`) and type `ACCEPT` only if the encoder motion agrees. Repeat separate
    trials at different sizes/directions; the fitted full-steps/rev must agree before
    trusting it. This helper sets both directions.
-4. `measure base` — use `+`/`-` to position, `measure` to sample, and enter the actual
-   protractor angle at two clearly separated poses.
+4. Verify the nominal base center, scale and installed direction above, or use
+   `measure base`: `+`/`-` to position, `measure` to sample, and enter actual
+   protractor angles at two clearly separated poses.
 5. `measure wrist` — use `a+`/`a-`/`b+`/`b-`, then `measure`, and enter the actual
    forearm-roll and wrist-pitch angles at three non-collinear poses (vary both axes).
-6. `measure gripper` — jog with `+`/`-`, then type `closed` at the physical closed pose
-   and `open` at the physical open pose. Generated `j5` lower/upper map to those poses.
+6. Use the measured gripper mapping above, or remeasure with `measure gripper`:
+   jog with `+`/`-`, then type `closed` at the physical closed pose and `open` at
+   the physical open pose. Generated `j5` lower/upper map to those poses.
 7. Inspect with `get KEY` or `export`; `apply` is an optional full-setup diagnostic.
-8. `save` validates every generated joint-limit corner. It fails rather than clipping
-   if a corner leaves a servo's code-owned window, if a mapping is missing/singular, or
-   if a stored value is invalid. If it reports `joint envelope exceeds actuator travel`,
-   measure the actual safe travel and edit `board_config.h` (or ask the team to review
-   the URDF limits); serial cannot widen the hard windows.
+8. `save` validates the reachable joint envelope. For a symmetric differential wrist
+   that means the diamond clipped by the j3/j4 limits, not unreachable rectangle
+   corners. It fails rather than clipping if a reachable extreme leaves a servo's
+   code-owned window, if a mapping is missing/singular, or if a stored value is
+   invalid. If it reports `joint envelope exceeds actuator travel` or `wrist limits
+   exceed the coupled envelope`, measure the actual safe travel and edit
+   `board_config.h` (or ask the team to review the URDF limits); serial cannot widen
+   the hard windows.
 9. `exit`, park all axes at the generated home marks, and `reference` (the GUI can do
    this after you reconnect). Normal motion remains blocked until reference succeeds.
 

@@ -8,6 +8,17 @@
 #include <string.h>
 
 namespace {
+// Boot-time auto-reference accepts only a shaft angle this close to the recorded home
+// sample: 256 of 16384 counts is ~0.27 deg of elbow travel at 21:1.
+constexpr int32_t kAutoReferenceTolerance = 256;
+// Joint speed is 28.6 deg/s, i.e. ~27.4k counts/s at 21:1. Anything faster is corruption.
+constexpr int32_t kEncoderMaxCountsPerSecond = 60000;
+constexpr uint32_t kEncoderDtMinMs = 10, kEncoderDtMaxMs = 500;
+// Consecutive bad samples (~5 x 10 ms) before an encoder fault latches, so a single
+// glitched read never disables the arm.
+constexpr uint8_t kFaultDebounceSamples = 5;
+// A small bump past a limit is tolerated; only a real excursion latches encoder_joint_limit.
+constexpr float kEncoderLimitMarginDeg = 5.0f;
 bool is(const char* a, const char* b) { return strcmp(a, b) == 0; }
 bool integral(double value) { return isfinite(value) && value >= INT32_MIN && value <= INT32_MAX && trunc(value) == value; }
 bool numbers(const calibration::Command& command, size_t start, double* out, size_t count, double maximumMagnitude = 1e9) {
@@ -38,8 +49,57 @@ void CalibrationSession::begin(uint32_t nowMs) {
   draft_ = config_;
   char reason[128];
   validConfig_ = actuators::validate(config_, reason, sizeof reason);
+  arm_.setWristCoupling(validConfig_ ? actuators::wristTiltSumDeg(config_) : 0.0f);
   preparedMask_ = 0;
   fault_ = validConfig_ ? "reference_required" : "uncalibrated";
+  // Guarded auto-reference: only the recorded marked-home shaft angle proves the elbow is
+  // still at home. Anything else (for example a stop mid-motion) needs a manual reference.
+  if (validConfig_ && config_.homeRaw >= 0 && config_.homeRaw < 16384) tryAutoReference(nowMs);
+}
+
+void CalibrationSession::tryAutoReference(uint32_t nowMs) {
+  // Reading the shaft angle needs SPI and the e-stop input only; the driver stays disabled.
+  if (io_.estopActive() || !io_.configure(config_, actuators::kStepperOutput)) {
+    io_.disableOutputs();
+    return;
+  }
+  uint16_t raw = 0;
+  if (!io_.readEncoder(raw)) {
+    io_.disableOutputs();
+    return;
+  }
+  int32_t delta = static_cast<int32_t>(raw) - config_.homeRaw;
+  if (delta > 8192) delta -= 16384;
+  if (delta < -8192) delta += 16384;
+  // 256 counts is ~0.27 deg of elbow travel at 21:1; a whole motor turn is 16384 and is not
+  // distinguishable, so this remains a guard, not a measurement.
+  if (abs(delta) > kAutoReferenceTolerance) {
+    io_.disableOutputs();
+    return;
+  }
+  if (!configure(config_, actuators::kAllOutputs, nowMs) || io_.estopActive()) {
+    io_.disableOutputs();
+    return;
+  }
+  encoder_.reset();
+  encoderTimed_ = false;
+  if (!readEncoderSample(nowMs)) {
+    io_.disableOutputs();
+    return;
+  }
+  encoder_.reference(ARM_HOME_DEG[actuators::ElbowPitch], config_);
+  if (!encoder_.referenced()) {
+    io_.disableOutputs();
+    return;
+  }
+  io_.zeroStepPosition();
+  faulted_ = false;
+  fault_ = "none";
+  arm_.setEstop(false, nowMs);
+  arm_.rehome(ARM_HOME_DEG, nowMs);
+  referenced_ = true;
+  io_.enableStepper(true);
+  if (*io_.error()) fail("stepper_enable", nowMs);
 }
 
 bool CalibrationSession::setCamera(float deg, uint16_t seq, uint32_t nowMs) {
@@ -74,15 +134,32 @@ bool CalibrationSession::configure(const actuators::Config& config, uint8_t outp
   disarm();
   preparedMask_ = 0;
   encoder_.reset();
+  encoderTimed_ = false;  // The first sample only establishes the raw angle.
+  sampleFaults_ = followingFaults_ = limitFaults_ = 0;
   if (!io_.configure(config, outputMask)) { fail(*io_.error() ? io_.error() : "hardware_setup", nowMs); return false; }
   if (io_.estopActive()) { fail("estop", nowMs); return false; }
   if (outputMask & actuators::kStepperOutput) {
-    uint16_t raw;
-    if (!io_.readEncoder(raw) || !encoder_.update(raw)) { fail("encoder", nowMs); return false; }
+    if (!readEncoderSample(nowMs)) { fail("encoder", nowMs); return false; }
   }
   preparedMask_ = outputMask;
   faulted_ = false;
   fault_ = "none";
+  return true;
+}
+
+bool CalibrationSession::readEncoderSample(uint32_t nowMs) {
+  uint16_t raw;
+  if (!io_.readEncoder(raw)) return false;
+  int32_t maxDelta = kEncoderMaxCountsPerSecond;
+  if (encoderTimed_) {
+    uint32_t dt = nowMs - encoderMs_;
+    if (dt < kEncoderDtMinMs) dt = kEncoderDtMinMs;
+    if (dt > kEncoderDtMaxMs) dt = kEncoderDtMaxMs;
+    maxDelta = static_cast<int32_t>(static_cast<int64_t>(kEncoderMaxCountsPerSecond) * dt / 1000);
+  }
+  if (!encoder_.update(raw, maxDelta)) return false;
+  encoderMs_ = nowMs;
+  encoderTimed_ = true;
   return true;
 }
 
@@ -91,8 +168,8 @@ void CalibrationSession::tick(uint32_t nowMs, float dtSec) {
   if (io_.estopActive()) { fail("estop", nowMs); return; }
   if (faulted_) return;  // Recovery always requires an explicit arm, apply or marked-home reference.
   if (preparedMask_ & actuators::kStepperOutput) {
-    uint16_t raw;
-    if (!io_.readEncoder(raw) || !encoder_.update(raw)) { fail("encoder", nowMs); return; }
+    if (readEncoderSample(nowMs)) sampleFaults_ = 0;
+    else if (++sampleFaults_ >= kFaultDebounceSamples) { fail("encoder", nowMs); return; }
   }
   if (calibrating_) {
     if (armedMask_ && static_cast<uint32_t>(nowMs - leaseMs_) > kWatchdogMs) fail("calibration_timeout", nowMs);
@@ -100,14 +177,18 @@ void CalibrationSession::tick(uint32_t nowMs, float dtSec) {
   }
   if (!referenced_) return;
   const float measured = encoder_.jointDeg(config_);
-  if (!isfinite(measured) || fabsf(measured - arm_.positionDeg()[actuators::ElbowPitch]) > config_.followingErrorDeg) {
-    fail("following_error", nowMs);
-    return;
-  }
-  if (measured < ARM_JOINT_MIN_DEG[actuators::ElbowPitch] || measured > ARM_JOINT_MAX_DEG[actuators::ElbowPitch]) {
-    fail("encoder_joint_limit", nowMs);
-    return;
-  }
+  const float low = ARM_JOINT_MIN_DEG[actuators::ElbowPitch];
+  const float high = ARM_JOINT_MAX_DEG[actuators::ElbowPitch];
+  const float overshoot = measured < low ? low - measured : (measured > high ? measured - high : 0.0f);
+  // Overshoot is not also counted as following error, so one bump cannot latch two faults.
+  const float following = fabsf(measured - arm_.positionDeg()[actuators::ElbowPitch]) - overshoot;
+  const bool followingBad = !isfinite(measured) || following > config_.followingErrorDeg;
+  const bool limitBad = !isfinite(measured) || overshoot > kEncoderLimitMarginDeg;
+  // Debounce: a single glitched sample (or a momentary bump) must not disable the arm.
+  followingFaults_ = followingBad ? static_cast<uint8_t>(followingFaults_ + 1) : 0;
+  limitFaults_ = limitBad ? static_cast<uint8_t>(limitFaults_ + 1) : 0;
+  if (followingFaults_ >= kFaultDebounceSamples) { fail("following_error", nowMs); return; }
+  if (limitFaults_ >= kFaultDebounceSamples) { fail("encoder_joint_limit", nowMs); return; }
   arm_.update(nowMs, dtSec);
   actuators::Targets targets;
   if (!actuators::map(config_, arm_.positionDeg(), targets)) { fail("actuator_envelope", nowMs); return; }
@@ -226,9 +307,9 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     if (!configure(config_, actuators::kAllOutputs, nowMs)) return error(fields, capacity, *io_.error() ? io_.error() : "hardware_setup");
     if (io_.estopActive()) return error(fields, capacity, "estop");
     disarm();
-    uint16_t raw;
     encoder_.reset();
-    if (!io_.readEncoder(raw) || !encoder_.update(raw)) { fail("encoder", nowMs); return error(fields, capacity, "encoder"); }
+    encoderTimed_ = false;
+    if (!readEncoderSample(nowMs)) { fail("encoder", nowMs); return error(fields, capacity, "encoder"); }
     encoder_.reference(ARM_HOME_DEG[actuators::ElbowPitch], config_);
     if (!encoder_.referenced()) return error(fields, capacity, "encoder_reference");
     io_.zeroStepPosition();
@@ -239,6 +320,10 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     referenced_ = true;
     io_.enableStepper(true);
     if (*io_.error()) { fail("stepper_enable", nowMs); return error(fields, capacity, io_.error()); }
+    // Remember the shaft angle of this marked home so a later boot can prove it is still
+    // there. Best effort: a failed write only means the next boot needs a manual reference.
+    config_.homeRaw = static_cast<int32_t>(encoder_.raw());
+    (void)store_.save(config_);
     return true;
   }
   if (!calibrating_) return error(fields, capacity, "bench_mode_required");
@@ -258,6 +343,7 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     if (!store_.save(draft_)) return error(fields, capacity, "nvs_save");
     config_ = draft_;
     validConfig_ = true;
+    arm_.setWristCoupling(actuators::wristTiltSumDeg(config_));
     fields[0] = '\0';
     return true;
   }
@@ -304,8 +390,7 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     if (preparedMask_ & actuators::kStepperOutput) {
       // Snapshot the counter before reading the encoder: an ISR can advance it during SPI.
       const int32_t steps = io_.stepPosition();
-      uint16_t raw;
-      if (!io_.readEncoder(raw) || !encoder_.update(raw)) { fail("encoder", nowMs); return error(fields, capacity, "encoder"); }
+      if (!readEncoderSample(nowMs)) { fail("encoder", nowMs); return error(fields, capacity, "encoder"); }
       snprintf(encoderFields, sizeof encoderFields, "raw,%u,counts,%lld,steps,%d",
           static_cast<unsigned>(encoder_.raw()), static_cast<long long>(encoder_.counts()), static_cast<int>(steps));
     } else {

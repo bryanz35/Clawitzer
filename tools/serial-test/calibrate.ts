@@ -9,7 +9,7 @@ import {
   CALIBRATION_ENTER_ACK, CALIBRATION_REFERENCE_ACK, CALIBRATION_KEY_ARITY,
   CALIBRATION_STEP_RATE,
   calibrationReplyMatches, crc8, encodeCalibration, nextSeq, parseCalibration,
-  parseCalibrationReply, parseStatus, SERIAL_BAUD,
+  parseCalibrationReply, parseCameraStatus, parseStatus, SERIAL_BAUD,
   type CalibrationCommand, type CalibrationKey, type CalibrationMutableKey, type CalibrationReply, type StatusMsg,
 } from "@arm-mirror/protocol";
 import { fitServo, fitStepper, fitWrist, type AngleSample, type WristSample } from "./calibration-fit";
@@ -56,6 +56,8 @@ class CalibrationLink {
         }
         return;
       }
+      // Independent camera telemetry is neither a calibration reply nor an error.
+      if (parseCameraStatus(line)) return;
       console.error(`ignored malformed serial line ${JSON.stringify(line)}`);
     });
     port.on("error", (e) => this.abort(e));
@@ -203,7 +205,7 @@ class Guide {
   }
 
   private async enter(): Promise<void> {
-    await this.confirmation("Disconnect/unload all linkage, clear the work area and keep a physical servo-power e-stop within reach. Arming can JUMP servos to 1500us centers. The assumed 500–2500us PWM windows are NOT verified mechanical travel or learned angle mappings. Pins, e-stop and hard windows live in board_config.h; changes require reflashing. Enter starts a FRESH draft and discards unsaved changes; use arm wrist to retain the current draft.", CALIBRATION_ENTER_ACK);
+    await this.confirmation("Disconnect/unload all linkage, clear the work area and keep a physical servo-power e-stop within reach. Arming can JUMP servos to configured centers; inspect get pulse INDEX first. Hard PWM windows do not prove clearance throughout joint combinations. Pins, e-stop and hard windows live in board_config.h; changes require reflashing. Enter starts a FRESH draft and discards unsaved changes; use arm wrist to retain the current draft.", CALIBRATION_ENTER_ACK);
     await this.link.request({ verb: "enter", acknowledgement: CALIBRATION_ENTER_ACK });
   }
 
@@ -354,7 +356,7 @@ class Guide {
         }
         if (text === "help") {
           console.log("Quick jog: wrist -> type UNLOADED_ESTOP_READY once -> a+/a-/b+ (default 5us) or an explicit amount (a+ 100). Simultaneous sets are atomic: `wrist 1600 1400` moves A and B together, and `pose 1 1600 2 1400` sets any armed channels. base+/base-/grip+/grip- after arm base / arm gripper. wrist enters a FRESH draft, arms only A/B directly (no apply, encoder or motor questionnaire), then shows pulses. To retain a draft, use arm wrist instead. Each entry validates every pulse before writing, then samples; no assumed roll/pitch directions, sweeps or movement retries.");
-          console.log("WARNING: center arming can jump to 1500us. The assumed 500–2500us PWM windows are NOT verified mechanical travel or learned angle mappings; stop before binding. Pins, e-stop and hard windows are read-only board_config.h configuration; reflash to change them.");
+          console.log("WARNING: arming can jump to configured centers; inspect get pulse INDEX first. Hard PWM windows do not prove mechanical clearance throughout joint combinations; stop before binding. Pins, e-stop and hard windows are read-only board_config.h configuration; reflash to change them.");
           console.log(`step N: a nonzero signed 32-bit integer relative move at ${CALIBRATION_STEP_RATE} microsteps/s, with NO bench travel cap. The resulting counter must also fit signed 32-bit. Positive/negative follow raw driver direction. Keep linkage unloaded, verify clearance and keep physical e-stop ready.`);
           console.log("enter requires unloaded/e-stop acknowledgement; set mutable mappings only while disarmed. Each arm prepares and isolates its selected actuator/pair at center; apply is an optional full-setup diagnostic, never a prerequisite. Step is one guarded bounded jog and waits for its completed counter. status/get do not feed the lease; serialized 50ms keepalive after apply/arm preserves the firmware 200ms lease. disarm/save/exit stop it. export emits read-only hardware as comments/get values and mutable keys as recoverable set lines. save still requires FULL mapping/generated-envelope validation. exit discards UNSAVED draft, not quit. reference needs saved valid config, normal mode and manual marked homes EVERY boot/power loss. Clean normal-mode quit preserves reference; SIGINT/error halts and clears it. USB reopening may reset and require reference again. Never retry an uncertain move; inspect before restart.");
           continue;
@@ -469,7 +471,7 @@ export async function runCalibration(portPath?: string): Promise<void> {
     if (!status) throw new Error("interrupted during status synchronization");
     console.log(status);
     console.log("Next: wrist -> type UNLOADED_ESTOP_READY once -> a+/a-/b+/b- (one 5us jog each). wrist starts a FRESH draft; arm wrist retains the current draft. No apply or full-system questionnaire.");
-    console.log("WARNING: arming can jump to 1500us centers; assumed 500–2500us PWM is NOT verified mechanical travel or a learned angle mapping. Pins, e-stop and hard windows are in board_config.h; changes require reflashing.");
+    console.log("WARNING: arming can jump to configured centers; inspect get pulse INDEX first. Hard PWM windows do not prove mechanical clearance throughout joint combinations. Pins, e-stop and hard windows are in board_config.h; changes require reflashing.");
     if (status.kind === "status" && status.mode === "calibration") {
       console.log("Bench mode blocks normal motion and reports ESTOP. Use status for the specific fault; movement requires explicit isolated arming.");
     }

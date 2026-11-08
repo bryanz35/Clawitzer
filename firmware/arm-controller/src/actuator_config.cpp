@@ -84,6 +84,71 @@ bool mapChecked(const Config& config, const float* deg, Targets& result) {
   return true;
 }
 
+// The wrist pair is a symmetric differential when A = cA - k(roll + pitch) and
+// B = cB + k(pitch - roll). Box constraints on the two pulse widths then bound the
+// reachable joint set by the diamond |roll| + |pitch| <= room/k, not by a rectangle:
+// the rectangular corner (roll 90, pitch 90) would need 180 degrees of one servo.
+constexpr size_t kMaxWristVertices = 8;
+
+struct WristPoint {
+  float roll, pitch;
+};
+
+bool diamondSum(const Config& config, float& sumDeg) {
+  const double coefficient[4] = {
+    config.wristRollUsPerDeg[0], config.wristPitchUsPerDeg[0],
+    config.wristRollUsPerDeg[1], config.wristPitchUsPerDeg[1]
+  };
+  for (size_t i = 0; i < 4; ++i) {
+    if (!isfinite(coefficient[i])) return false;
+  }
+  const double magnitude = fabs(coefficient[0]);
+  if (!(magnitude > 0.0)) return false;
+  const double tolerance = magnitude * 1e-4;
+  for (size_t i = 0; i < 4; ++i) {
+    if (fabs(fabs(coefficient[i]) - magnitude) > tolerance) return false;
+  }
+  // Servo A follows roll + pitch, servo B follows pitch - roll (either sign).
+  if (fabs(coefficient[0] - coefficient[1]) > tolerance ||
+      fabs(coefficient[2] + coefficient[3]) > tolerance) return false;
+  double room = 0.0;
+  for (size_t i = 0; i < 2; ++i) {
+    const ServoCalibration& servo = config.servo[WristA + i];
+    const double travel = fmin(static_cast<double>(servo.centerUs) - servo.minUs,
+                               static_cast<double>(servo.maxUs) - servo.centerUs);
+    if (!isfinite(travel) || travel <= 0.0) return false;
+    room = i == 0 ? travel : fmin(room, travel);
+  }
+  sumDeg = static_cast<float>(room / magnitude);
+  return isfinite(sumDeg) && sumDeg > 0.0f;
+}
+
+// Sutherland-Hodgman clip of a convex polygon against one axis-aligned half-plane.
+size_t clipHalfPlane(WristPoint* points, size_t count, bool clipRoll, float bound, bool keepGreater) {
+  WristPoint clipped[kMaxWristVertices];
+  size_t kept = 0;
+  for (size_t i = 0; i < count; ++i) {
+    const WristPoint current = points[i];
+    const WristPoint previous = points[i == 0 ? count - 1 : i - 1];
+    const float currentValue = clipRoll ? current.roll : current.pitch;
+    const float previousValue = clipRoll ? previous.roll : previous.pitch;
+    const bool currentInside = keepGreater ? currentValue >= bound : currentValue <= bound;
+    const bool previousInside = keepGreater ? previousValue >= bound : previousValue <= bound;
+    if (currentInside != previousInside) {
+      const float t = (bound - previousValue) / (currentValue - previousValue);
+      WristPoint edge = {
+        previous.roll + t * (current.roll - previous.roll),
+        previous.pitch + t * (current.pitch - previous.pitch)
+      };
+      if (clipRoll) edge.roll = bound; else edge.pitch = bound;
+      if (kept < kMaxWristVertices) clipped[kept++] = edge;
+    }
+    if (currentInside && kept < kMaxWristVertices) clipped[kept++] = current;
+  }
+  for (size_t i = 0; i < kept; ++i) points[i] = clipped[i];
+  return kept;
+}
+
 }  // namespace
 
 CalibrationValues calibrationValues(const Config& config) {
@@ -105,6 +170,7 @@ CalibrationValues calibrationValues(const Config& config) {
   values.senseResistorOhm = config.senseResistorOhm;
   values.followingErrorDeg = config.followingErrorDeg;
   values.uartAddress = config.uartAddress;
+  values.homeRaw = config.homeRaw;
   return values;
 }
 
@@ -126,6 +192,7 @@ void applyCalibrationValues(Config& config, const CalibrationValues& values) {
   config.senseResistorOhm = values.senseResistorOhm;
   config.followingErrorDeg = values.followingErrorDeg;
   config.uartAddress = values.uartAddress;
+  config.homeRaw = values.homeRaw;
 }
 
 bool validateBench(const Config& config, uint8_t outputMask, char* error, size_t capacity) {
@@ -188,12 +255,37 @@ bool validate(const Config& config, char* error, size_t capacity) {
   if (!mappingValid(config)) return fail(error, capacity, "incomplete or singular angle calibration");
   Targets targets;
   if (!mapChecked(config, ARM_HOME_DEG, targets)) return fail(error, capacity, "home outside actuator envelope");
-  // An affine map attains its extrema at the corners, including both coupled-wrist inputs.
-  for (unsigned corner = 0; corner < (1u << ARM_NUM_JOINTS); ++corner) {
-    float deg[ARM_NUM_JOINTS];
-    for (size_t i = 0; i < ARM_NUM_JOINTS; ++i)
-      deg[i] = corner & (1u << i) ? ARM_JOINT_MAX_DEG[i] : ARM_JOINT_MIN_DEG[i];
-    if (!mapChecked(config, deg, targets)) return fail(error, capacity, "joint envelope exceeds actuator travel");
+  // An affine map attains its extrema at the vertices of the commandable set. For a symmetric
+  // differential that set is the diamond clipped by the j3/j4 limits, so the rectangle corners
+  // (which are unreachable) are not enumerated. Other calibrations keep the rectangle.
+  float sum = 0.0f;
+  const bool coupled = diamondSum(config, sum);
+  WristPoint wrist[4] = {{sum, 0.0f}, {0.0f, sum}, {-sum, 0.0f}, {0.0f, -sum}};
+  size_t vertices = 4;
+  if (coupled) {
+    vertices = clipHalfPlane(wrist, vertices, true, ARM_JOINT_MIN_DEG[WristRoll], true);
+    vertices = clipHalfPlane(wrist, vertices, true, ARM_JOINT_MAX_DEG[WristRoll], false);
+    vertices = clipHalfPlane(wrist, vertices, false, ARM_JOINT_MIN_DEG[WristPitch], true);
+    vertices = clipHalfPlane(wrist, vertices, false, ARM_JOINT_MAX_DEG[WristPitch], false);
+    if (vertices == 0) return fail(error, capacity, "wrist limits exceed the coupled envelope");
+  } else {
+    wrist[0] = {ARM_JOINT_MIN_DEG[WristRoll], ARM_JOINT_MIN_DEG[WristPitch]};
+    wrist[1] = {ARM_JOINT_MAX_DEG[WristRoll], ARM_JOINT_MIN_DEG[WristPitch]};
+    wrist[2] = {ARM_JOINT_MIN_DEG[WristRoll], ARM_JOINT_MAX_DEG[WristPitch]};
+    wrist[3] = {ARM_JOINT_MAX_DEG[WristRoll], ARM_JOINT_MAX_DEG[WristPitch]};
+  }
+  const size_t independent[] = {BaseYaw, ElbowPitch, Grip};
+  for (unsigned corner = 0; corner < 8; ++corner) {
+    for (size_t vertex = 0; vertex < vertices; ++vertex) {
+      float deg[ARM_NUM_JOINTS] = {};
+      for (size_t i = 0; i < 3; ++i) {
+        deg[independent[i]] = corner & (1u << i) ? ARM_JOINT_MAX_DEG[independent[i]]
+                                                 : ARM_JOINT_MIN_DEG[independent[i]];
+      }
+      deg[WristRoll] = wrist[vertex].roll;
+      deg[WristPitch] = wrist[vertex].pitch;
+      if (!mapChecked(config, deg, targets)) return fail(error, capacity, "joint envelope exceeds actuator travel");
+    }
   }
   return true;
 }
@@ -211,6 +303,11 @@ float stepsPerJointDegree(const Config& config) {
   return static_cast<float>(stepScale(config));
 }
 
+float wristTiltSumDeg(const Config& config) {
+  float sum = 0.0f;
+  return diamondSum(config, sum) ? sum : 0.0f;
+}
+
 void EncoderTracker::reset() {
   raw_ = 0;
   counts_ = referenceCounts_ = 0;
@@ -219,6 +316,10 @@ void EncoderTracker::reset() {
 }
 
 bool EncoderTracker::update(uint16_t raw) {
+  return update(raw, 8192);
+}
+
+bool EncoderTracker::update(uint16_t raw, int32_t maxDelta) {
   if (raw >= 16384) return false;
   if (!haveSample_) {
     raw_ = raw;
@@ -230,6 +331,8 @@ bool EncoderTracker::update(uint16_t raw) {
   if (delta == 8192 || delta == -8192) return false;
   if (delta > 8192) delta -= 16384;
   if (delta < -8192) delta += 16384;
+  // Faster than any legal motion: treat as a corrupt sample and keep the last good state.
+  if (maxDelta <= 0 || delta > maxDelta || delta < -maxDelta) return false;
   if ((delta > 0 && counts_ > INT64_MAX - delta) ||
       (delta < 0 && counts_ < INT64_MIN - delta)) return false;
   counts_ += delta;

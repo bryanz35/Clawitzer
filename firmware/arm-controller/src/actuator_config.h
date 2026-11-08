@@ -40,6 +40,8 @@ struct Config {
   float currentMa = 0, senseResistorOhm = 0;
   float followingErrorDeg = 0;
   uint32_t uartAddress = 0;
+  // Encoder counts at the last marked-home reference (-1 = never referenced since flash).
+  int32_t homeRaw = -1;
 };
 
 // Persist only tunable values. Wiring, e-stop polarity and hard PWM windows
@@ -50,6 +52,9 @@ struct CalibrationValues {
   float motorStepsPerRev, gearRatio, currentMa, senseResistorOhm, followingErrorDeg;
   uint32_t microsteps, uartAddress;
   int32_t motorDirection, encoderDirection;
+  // Motor-shaft encoder angle sampled at the last marked-home reference, or -1.
+  // Only this exact reading can be trusted as "the elbow is at home" at boot.
+  int32_t homeRaw;
 };
 CalibrationValues calibrationValues(const Config& config);
 void applyCalibrationValues(Config& config, const CalibrationValues& values);
@@ -67,6 +72,10 @@ bool validateSetup(const Config& config, char* error, size_t capacity);
 bool validate(const Config& config, char* error, size_t capacity);
 bool map(const Config& config, const float deg[ARM_NUM_JOINTS], Targets& targets);
 float stepsPerJointDegree(const Config& config);
+// Symmetric 1:2 differential wrist: the reachable roll/pitch set is the diamond
+// |roll| + |pitch| <= the returned degrees. Returns 0 when the calibrated coefficients
+// are not that shape, so validation must fall back to the rectangular limit corners.
+float wristTiltSumDeg(const Config& config);
 
 // Single-turn motor encoder, unwrapped only while continuously observed. A marked home reference
 // is mandatory after boot/power loss because reduction gearing makes a raw angle ambiguous.
@@ -74,6 +83,9 @@ class EncoderTracker {
  public:
   void reset();
   bool update(uint16_t raw);
+  // Same unwrap, but rejects a jump larger than `maxDelta` counts without mutating state.
+  // A one-sample glitch must never be integrated, or the reference shifts silently.
+  bool update(uint16_t raw, int32_t maxDelta);
   void reference(float jointDeg, const Config& config);
   bool referenced() const { return referenced_; }
   uint16_t raw() const { return raw_; }
