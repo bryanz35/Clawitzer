@@ -1,5 +1,5 @@
 // Operator page (Quest Browser). Per XR frame:
-//   tracking → deadman → IK (main thread) → joints @ CMD_HZ over WebRTC → phone → MCU.
+//   tracking → deadman → clutch (hand motion since engage) → IK (main thread) → joints @ CMD_HZ over WebRTC → phone → MCU.
 // Query params:
 //   ?emulate=1      install IWER (Meta's WebXR emulator, Quest 3 preset) for desktop testing
 //   ?mockRobot=1    no WebRTC peer; commands are echoed back locally
@@ -7,6 +7,7 @@
 //   ?signal=ws://…  signaling URL override (default ws://<page host>:8080/signal)
 //   ?hand=left      track the left hand (default right)
 //   ?fov=80         horizontal degrees the whole camera frame spans in the headset
+//   ?debug=1        start with the debug arm model shown (the phone app's switch overrides it once connected)
 
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
@@ -19,11 +20,13 @@ import {
   type Quat,
   type StatusMsg,
 } from "@arm-mirror/protocol";
-import { ArmIK, loadArm, xrToArmQuat, xrToArmVec, type Vec3 } from "@arm-mirror/kinematics";
+import { ArmIK, loadArm, type IKResult, type Vec3 } from "@arm-mirror/kinematics";
 import { OneEuroFilter, OneEuroQuatFilter } from "@arm-mirror/filters";
 import urdfText from "../../../hardware/urdf/arm.urdf?raw";
+import { Clutch } from "./clutch";
+import { DebugArm } from "./debug-arm";
 import { Deadman } from "./deadman";
-import { formatHead, Hud } from "./hud";
+import { formatHead, formatJoints, Hud } from "./hud";
 import { ImuClient } from "./imu";
 import { OperatorLink, type LinkState } from "./link";
 import { readTracking } from "./tracking";
@@ -33,9 +36,6 @@ const params = new URLSearchParams(location.search);
 const MOCK_ROBOT = params.get("mockRobot") === "1";
 const HAND: "left" | "right" = params.get("hand") === "left" ? "left" : "right";
 const SIGNAL_URL = params.get("signal") ?? `ws://${location.hostname}:8080/signal`;
-
-// Arm elbow→tool is 0.38 m, close to a human elbow→knuckle; tune per operator after first tests.
-const HAND_TO_ARM_SCALE = 1.0;
 
 const statusEl = document.getElementById("status")!;
 const enterButton = document.getElementById("enter-vr") as HTMLButtonElement;
@@ -47,6 +47,7 @@ async function installEmulatorIfRequested(): Promise<void> {
   const device = new XRDevice(metaQuest3);
   // Desktop Chrome exposes a native navigator.xr (no headset); ?emulate=1 means "use IWER anyway".
   device.installRuntime({ forceInstall: true });
+  Object.assign(window, { iwer: device }); // lets a test script drive the emulated hands
   new DevUI(device);
 }
 
@@ -95,10 +96,13 @@ async function main(): Promise<void> {
 
   const model = loadArm(urdfText);
   const ik = new ArmIK(model);
-  // Elbow (j2) sits off the j1 axis, so it swings with base yaw: keep its reach and height from arm.urdf.
-  const origin = (name: string) => model.chain.find((j) => j.name === name)!.xyz;
-  const elbowReach = Math.hypot(origin("j2")[0], origin("j2")[1]);
-  const elbowHeight = origin("j1")[2] + origin("j2")[2];
+  // Debug: the commanded pose as a small head-locked model right of the HUD, seen from behind and above.
+  const debugArm = new DebugArm(model);
+  debugArm.object.position.set(0.36, -0.28, -0.65);
+  debugArm.object.rotation.set(0.4, 0.3, 0, "YXZ");
+  debugArm.object.scale.setScalar(0.6);
+  debugArm.object.visible = params.get("debug") === "1";
+  camera.add(debugArm.object);
 
   const fov = Number(params.get("fov"));
   const video = new VideoPanel(fov > 0 && fov < 180 ? { displayHFovDeg: fov } : {});
@@ -107,6 +111,8 @@ async function main(): Promise<void> {
 
   // ── State ────────────────────────────────────────────────────────────────
   const deadman = new Deadman();
+  const clutch = new Clutch();
+  let lastIK: IKResult | null = null;
   const posFilter = [0, 1, 2].map(() => new OneEuroFilter());
   const quatFilter = new OneEuroQuatFilter();
   let commanded: JointDeg = ik.deg;
@@ -125,6 +131,7 @@ async function main(): Promise<void> {
     link.onControl = (msg: ControlMsg) => {
       if (msg.t === "status") lastStatus = msg;
       else if (msg.t === "camOrient") camOrient = msg;
+      else if (msg.t === "debug") debugArm.object.visible = msg.on;
     };
   }
   const imuUrl = params.get("imu");
@@ -155,21 +162,24 @@ async function main(): Promise<void> {
         commanded = ik.deg;
         posFilter.forEach((f) => f.reset());
         quatFilter.reset();
+        lastIK = null;
+        // The deadman only engages with a hand and head in view. Anchor on the arm's current tool pose.
+        clutch.engage(s.hand!, s.head!, ik.forward(ik.deg));
       }
 
-      if (deadman.engaged && s.hand && s.elbow) {
+      if (event === "release") lastIK = null;
+
+      const target = deadman.engaged && s.hand ? clutch.target(s.hand) : null;
+      if (target) {
         const t = timeMs / 1000;
-        const rel = s.hand.knuckle.map((k, i) => (k - s.elbow![i]) * HAND_TO_ARM_SCALE) as Vec3;
-        const v = xrToArmVec(rel);
-        const yaw = Math.atan2(v[1], v[0]); // forearm heading; the arm's j1 follows it
-        const elbow: Vec3 = [elbowReach * Math.cos(yaw), elbowReach * Math.sin(yaw), elbowHeight];
-        const p = v.map((x, i) => posFilter[i].filter(x + elbow[i], t)) as Vec3;
-        const q: Quat = quatFilter.filter(xrToArmQuat(s.hand.wrist.orientation), t);
-        const r = ik.solve(p, q);
-        commanded = r.deg;
-        hint = r.stepRejected ? "jump too large: move your hand back toward the arm's pose" : r.reachable ? "" : "out of reach (clamped)";
-      } else if (deadman.engaged) {
-        hint = "elbow not tracked: holding"; // TODO(stretch): IMU fallback via imu.latest()
+        const p = target.p.map((x, i) => posFilter[i].filter(x, t)) as Vec3;
+        const q: Quat = quatFilter.filter(target.q, t);
+        lastIK = ik.solve(p, q);
+        commanded = lastIK.deg;
+        hint = lastIK.stepRejected
+          ? "jump too large: slow down, or release and re-pinch"
+          : lastIK.reachable ? "" : "out of reach (clamped)";
+        // TODO(stretch): when s.hand is null, feed an IMU-derived hand pose (imu.latest()) to the same clutch.
       } else {
         hint = deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
       }
@@ -186,12 +196,13 @@ async function main(): Promise<void> {
     const lines = [
       ...formatHead(headQ),
       `link: ${linkState}   deadman: ${deadman.state}   arm: ${lastStatus?.state ?? "?"}`,
-      `cmd: ${commanded.map((d) => d.toFixed(1)).join(" ")}`,
+      ...formatJoints(commanded, lastStatus?.deg ?? null, model.limits, lastIK),
       imu ? `imu: ${imu.latest() ? "live" : "stale"}` : "",
       hint,
     ].filter(Boolean);
     statusEl.textContent = lines.join("\n");
     hud.setLines(lines, timeMs);
+    if (debugArm.object.visible) debugArm.setDeg(commanded);
 
     renderer.render(scene, camera);
   });

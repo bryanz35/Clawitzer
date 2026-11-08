@@ -35,6 +35,12 @@ export interface StatusMsg {
   deg: JointDeg;
 }
 
+/** Phone → Quest. The phone app's debug switch: show the commanded-pose arm model in VR. Resent ~1 Hz (the channel drops). */
+export interface DebugMsg {
+  t: "debug";
+  on: boolean;
+}
+
 // ── IMU wearable WebSocket (wearable → Quest) ──────────────────────────────
 
 export interface ImuMsg {
@@ -82,7 +88,7 @@ export interface PeerMsg {
   present: boolean;
 }
 
-export type ControlMsg = JointsMsg | CamOrientMsg | StatusMsg;
+export type ControlMsg = JointsMsg | CamOrientMsg | StatusMsg | DebugMsg;
 export type SignalMsg = OfferMsg | AnswerMsg | IceMsg | PeerMsg;
 export type Message = ControlMsg | ImuMsg | SignalMsg;
 
@@ -130,6 +136,10 @@ export function isStatusMsg(x: unknown): x is StatusMsg {
   return isObj(x) && x.t === "status" && isSeq(x.seq) && isArmState(x.state) && isJointDeg(x.deg);
 }
 
+export function isDebugMsg(x: unknown): x is DebugMsg {
+  return isObj(x) && x.t === "debug" && typeof x.on === "boolean";
+}
+
 export function isImuMsg(x: unknown): x is ImuMsg {
   return isObj(x) && x.t === "imu" && isSeq(x.seq) && isQuat(x.forearm) && isQuat(x.hand);
 }
@@ -161,7 +171,7 @@ export function isPeerMsg(x: unknown): x is PeerMsg {
 }
 
 export function isControlMsg(x: unknown): x is ControlMsg {
-  return isJointsMsg(x) || isCamOrientMsg(x) || isStatusMsg(x);
+  return isJointsMsg(x) || isCamOrientMsg(x) || isStatusMsg(x) || isDebugMsg(x);
 }
 
 export function isSignalMsg(x: unknown): x is SignalMsg {

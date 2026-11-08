@@ -381,7 +381,7 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
                 KeyValue("Operator", robot.operatorUrls.joinToString("\n") { it.removePrefix("http://") }.ifEmpty { "no network" })
             }
             // Kept from the old screen: lens choice (Samsung may expose the ultrawide only via the logical camera)
-            // and the mock MCU for bench work without hardware.
+            // and the mock MCU for bench work without hardware. Debug toggles the operator's in-VR arm model.
             if (cams.size > 1) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     cams.forEach { c ->
@@ -389,18 +389,23 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
                     }
                 }
             }
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 44.dp)
-                    .toggleable(robot.mock.value, role = Role.Switch, onValueChange = robot::setMock),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Mock MCU", color = Cz.N700, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = robot.mock.value, onCheckedChange = null,
-                    colors = SwitchDefaults.colors(checkedTrackColor = Cz.A600, uncheckedTrackColor = Cz.N300, uncheckedBorderColor = Cz.N500, uncheckedThumbColor = Cz.N700),
-                )
-            }
+            SwitchRow("Mock MCU", robot.mock.value, robot::setMock)
+            SwitchRow("Debug arm model in VR", robot.debug.value, robot::setDebug)
         }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = Cz.N700, modifier = Modifier.weight(1f))
+        Switch(
+            checked = checked, onCheckedChange = null,
+            colors = SwitchDefaults.colors(checkedTrackColor = Cz.A600, uncheckedTrackColor = Cz.N300, uncheckedBorderColor = Cz.N500, uncheckedThumbColor = Cz.N700),
+        )
     }
 }
 

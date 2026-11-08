@@ -90,6 +90,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 **WebRTC data channel (Quest ↔ phone):** JSON with a `t` discriminator.
 - `joints`: `{seq, deg[5], engaged}`
 - `camOrient`: `{q, ts}`
+- `debug`: `{on}` (phone app's debug switch → in-VR arm model; resent 1 Hz)
 - `status`: mirrors the serial status line.
 
 **IMU wearable WebSocket (wearable → Quest), ~100 Hz:** `{t:"imu", seq, forearm:q, hand:q}`.
@@ -152,6 +153,6 @@ pio device monitor -d firmware/arm-controller
 
 1. Arm firmware: serial parser, limits, watchdog, e-stop handling. Tested from a laptop with the serial test CLI.
 2. The phone app serves the operator page; the Quest connects; head pose drives the pan/tilt stand.
-3. Quest hand tracking → IK → arm, with the deadman gesture. No in-VR 3D arm copy (dropped 2026-11-07); the HUD shows commanded and reported state.
+3. Quest hand tracking → IK → arm, with the deadman gesture. The HUD shows commanded and reported state; an in-VR arm model of the commanded pose appears only when the phone app's debug switch is on.
 4. Video stream with wide-FOV crop.
 5. Stretch goals: IMU fallback, IOBT elbow fusion, polish.

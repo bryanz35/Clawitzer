@@ -3,9 +3,11 @@
 
 import { CanvasTexture, Euler, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace } from "three";
 import type { Quat } from "@arm-mirror/protocol";
+import { DEG, type IKResult, type JointLimits } from "@arm-mirror/kinematics";
+import { JOINT_LABELS } from "./joint-jog";
 
 const W = 1024;
-const H = 512;
+const H = 768;
 const REDRAW_MS = 100;
 
 /** Head orientation as text. Euler order YXZ: yaw about +Y (left +), pitch about X (up +), roll about Z (tilt left +). */
@@ -17,6 +19,33 @@ export function formatHead(q: Quat | null): string[] {
     `yaw ${d(e.y)}°  pitch ${d(e.x)}°  roll ${d(e.z)}°`,
     `q [${q.map((v) => v.toFixed(3)).join(", ")}]`,
   ];
+}
+
+const BAR_SLOTS = 9;
+
+function signedDeg(d: number): string {
+  return `${d >= 0 ? "+" : ""}${d.toFixed(1)}°`.padStart(7);
+}
+
+/** One line per joint (commanded, reported, position within limits) plus an IK result line. */
+export function formatJoints(
+  cmd: readonly number[],
+  reported: readonly number[] | null,
+  limits: readonly JointLimits[],
+  ik: IKResult | null,
+): string[] {
+  const lines = cmd.map((d, i) => {
+    const lo = limits[i].lower * DEG;
+    const hi = limits[i].upper * DEG;
+    const slot = Math.round(((d - lo) / (hi - lo)) * (BAR_SLOTS - 1));
+    const bar = Array.from({ length: BAR_SLOTS }, (_, k) => (k === slot ? "•" : "·")).join("");
+    const rep = reported ? signedDeg(reported[i]) : "    —  ";
+    return `${JOINT_LABELS[i].padEnd(11)} ${signedDeg(d)}  rep ${rep}  [${bar}]`;
+  });
+  if (!ik) return [...lines, "ik: idle"];
+  const state = ik.stepRejected ? "step rejected" : ik.reachable ? "ok" : "out of reach";
+  const err = `err ${(ik.positionError * 1000).toFixed(0)} mm / ${(ik.rotationError * DEG).toFixed(1)}°`;
+  return [...lines, `ik: ${state}${ik.clamped ? " · clamped" : ""} · ${err}`];
 }
 
 export class Hud {
