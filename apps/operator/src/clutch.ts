@@ -1,7 +1,7 @@
 // Clutch (relative) mapping: hand motion since the deadman engaged moves the arm's tool from where it was.
 // Needs only Quest hand tracking (no body elbow), starts with zero error so engaging never trips the IK
 // step check, and works in the operator's facing frame so turning your body doesn't rotate the arm.
-// Release, move the hand back, pinch again to ratchet.
+// Release, move the hand back, re-engage to ratchet.
 
 import { Euler, Quaternion, Vector3 } from "three";
 import type { Quat } from "@arm-mirror/protocol";

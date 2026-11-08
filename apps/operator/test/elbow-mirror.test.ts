@@ -28,7 +28,7 @@ function head(yawDeg: number): Pose {
 /** The wrist sits HAND behind the knuckle along the hand's −Z; `wristFrame` overrides the wrist joint's reported orientation. */
 function hand(knuckle: Vec3, orientation: Quaternion, wristFrame = orientation): HandSample {
   const wrist = new Vector3(0, 0, HAND).applyQuaternion(orientation).add(new Vector3(...knuckle));
-  return { wrist: { position: [wrist.x, wrist.y, wrist.z], orientation: q(wristFrame) }, knuckle, thumbTip: knuckle, indexTip: knuckle };
+  return { wrist: { position: [wrist.x, wrist.y, wrist.z], orientation: q(wristFrame) }, knuckle, thumbTip: knuckle, indexTip: knuckle, curlFingers: [] };
 }
 
 function expectPose(actual: { p: Vec3; q: Quat }, expected: ToolPose): void {

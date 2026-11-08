@@ -25,6 +25,7 @@ function hand(knuckle: Vec3, orientation: Quaternion): HandSample {
     knuckle,
     thumbTip: knuckle,
     indexTip: knuckle,
+    curlFingers: [],
   };
 }
 

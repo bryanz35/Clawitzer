@@ -1,7 +1,7 @@
 // Elbow + hand (absolute) mapping: the operator's forearm drives the arm's forearm directly. The arm's elbow (j2)
 // stands in for the operator's elbow, so the tool target is the operator's elbow→knuckle vector placed at j2,
 // and the tool orientation is the operator's hand orientation (wrist→knuckle direction, back-of-hand roll). Leaning or shifting moves elbow and knuckle
-// together and cancels out, and re-pinching can't ratchet the arm away from your pose (unlike the clutch).
+// together and cancels out, and re-engaging can't ratchet the arm away from your pose (unlike the clutch).
 // Works in the operator's facing frame (head yaw at engage), like the clutch. Needs body tracking for the elbow.
 // On engage the target blends from the arm's current tool pose to the mirrored pose over BLEND_S, so engaging
 // with your arm posed differently from the robot's doesn't trip the IK step check.
@@ -23,7 +23,7 @@ export const MAX_FOREARM_STRETCH = 0.2;
 /**
  * The claw points this much below the wrist→knuckle line, toward where the fingers point during the pinch.
  * Team choice from headset testing: pointing the claw down then needs less wrist flex, which is easier on the
- * wrist and turns the palm toward the head less (fewer deadman releases).
+ * wrist and turns the palm toward the head less (fewer system-menu palm pinches).
  */
 export const PINCH_PITCH_DOWN_DEG = 20;
 const PINCH_PITCH = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -PINCH_PITCH_DOWN_DEG * (Math.PI / 180));

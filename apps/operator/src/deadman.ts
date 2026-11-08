@@ -1,52 +1,51 @@
-// Deadman: the arm follows only while an index–thumb pinch is held (safety invariant 3).
+// Deadman: the arm follows only while the middle, ring and little fingers are curled (safety invariant 3).
+// The index–thumb pinch is left free for the gripper.
 //
-// Quest reserves the *palm* pinch (pinching with the palm facing you) for the system menu, so
-// a pinch only counts while the palm faces away from the head. Release is immediate on any of:
-// fingers apart, palm turned toward the head, or hand/head tracking lost.
+// Curl per finger = |tip − wrist| / |knuckle − wrist|: about 2 when straight, under 1 in a fist.
+// Release needs the fingers clearly extended. An in-between reading keeps the current state, and
+// a brief tracking dropout keeps the deadman engaged (the arm holds meanwhile: no hand, no target).
 
-import { Quaternion, Vector3 } from "three";
+import type { Vec3 } from "@arm-mirror/kinematics";
 import type { HandSample, Pose } from "./tracking";
 
 export interface DeadmanParams {
-  /** Thumb–index distance (m) below which a pinch starts. */
-  engageDistance: number;
-  /** Distance (m) above which a pinch ends. Larger than engageDistance for hysteresis. */
-  releaseDistance: number;
-  /** Pinch must be held this long (ms) before the arm engages. */
+  /** Mean curl ratio below which the fingers count as curled. */
+  curlRatio: number;
+  /** Mean curl ratio above which the fingers count as extended. Larger than curlRatio for hysteresis. */
+  extendRatio: number;
+  /** Curl must be held this long (ms) before the arm engages. */
   holdMs: number;
-  /** cos(angle) between palm normal and the direction to the head above which the pinch is the system gesture. */
-  palmTowardHeadCos: number;
+  /** Hand or head tracking lost for longer than this (ms) releases. */
+  lostGraceMs: number;
 }
 
 // TODO: tune on the headset.
 export const DEFAULT_DEADMAN: DeadmanParams = {
-  engageDistance: 0.015,
-  releaseDistance: 0.03,
+  curlRatio: 1.1,
+  extendRatio: 1.5,
   holdMs: 150,
-  palmTowardHeadCos: 0.3,
+  lostGraceMs: 500,
 };
 
 export type DeadmanState = "released" | "arming" | "engaged";
 export type DeadmanEvent = "engage" | "release" | null;
 
-function dist(a: readonly number[], b: readonly number[]): number {
+function dist(a: Vec3, b: Vec3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-/** True when the palm faces the head (the reserved system pinch). */
-export function palmFacesHead(wrist: Pose, head: Pose, cosThreshold: number): boolean {
-  // WebXR hand joints: −Y points out of the palm. TODO: verify in IWER and on the headset.
-  const normal = new Vector3(0, -1, 0).applyQuaternion(new Quaternion(...wrist.orientation));
-  const toHead = new Vector3(...head.position).sub(new Vector3(...wrist.position));
-  const len = toHead.length();
-  if (len < 1e-6) return true;
-  return normal.dot(toHead) / len > cosThreshold;
+/** Mean tip-to-wrist over knuckle-to-wrist distance of the middle, ring and little fingers. */
+export function curlRatio(hand: HandSample): number {
+  const w = hand.wrist.position;
+  const ratios = hand.curlFingers.map((f) => dist(f.tip, w) / Math.max(dist(f.knuckle, w), 1e-6));
+  return ratios.reduce((a, b) => a + b, 0) / ratios.length;
 }
 
 export class Deadman {
   private readonly p: DeadmanParams;
   private _state: DeadmanState = "released";
   private armingSince = 0;
+  private lostSince: number | null = null;
 
   constructor(params: Partial<DeadmanParams> = {}) {
     this.p = { ...DEFAULT_DEADMAN, ...params };
@@ -60,39 +59,42 @@ export class Deadman {
     return this._state === "engaged";
   }
 
-  /** Drop any pinch without an event, e.g. when the XR session (and its reference space) ends. */
-  release(): void {
+  /** Release now, e.g. arm not ready or the XR session ended. */
+  release(): DeadmanEvent {
+    const wasEngaged = this._state === "engaged";
     this._state = "released";
+    this.lostSince = null;
+    return wasEngaged ? "release" : null;
   }
 
   /** Call once per XR frame. `nowMs` is the frame timestamp. */
   update(hand: HandSample | null, head: Pose | null, nowMs: number): DeadmanEvent {
-    const wasEngaged = this._state === "engaged";
-    if (!hand || !head || palmFacesHead(hand.wrist, head, this.p.palmTowardHeadCos)) {
-      this._state = "released";
-      return wasEngaged ? "release" : null;
+    if (!hand || !head) {
+      if (this._state !== "engaged") {
+        this._state = "released";
+        return null;
+      }
+      this.lostSince ??= nowMs;
+      return nowMs - this.lostSince > this.p.lostGraceMs ? this.release() : null;
     }
-    const d = dist(hand.thumbTip, hand.indexTip);
+    this.lostSince = null;
+    const r = curlRatio(hand);
     switch (this._state) {
       case "released":
-        if (d < this.p.engageDistance) {
+        if (r < this.p.curlRatio) {
           this._state = "arming";
           this.armingSince = nowMs;
         }
         return null;
       case "arming":
-        if (d > this.p.releaseDistance) this._state = "released";
+        if (r > this.p.extendRatio) this._state = "released";
         else if (nowMs - this.armingSince >= this.p.holdMs) {
           this._state = "engaged";
           return "engage";
         }
         return null;
       case "engaged":
-        if (d > this.p.releaseDistance) {
-          this._state = "released";
-          return "release";
-        }
-        return null;
+        return r > this.p.extendRatio ? this.release() : null;
     }
   }
 }
