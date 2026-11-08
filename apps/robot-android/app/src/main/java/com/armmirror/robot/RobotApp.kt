@@ -17,8 +17,10 @@ import com.armmirror.robot.arm.ArmLinkState
 import com.armmirror.robot.arm.MockArmLink
 import com.armmirror.robot.arm.Relay
 import com.armmirror.robot.arm.UsbArmLink
+import com.armmirror.robot.generated.ARM_PARK_DEG
 import com.armmirror.robot.hub.HUB_PORT
 import com.armmirror.robot.hub.Hub
+import com.armmirror.robot.protocol.CMD_HZ
 import com.armmirror.robot.protocol.Status
 import com.armmirror.robot.protocol.camOrientJson
 import com.armmirror.robot.protocol.debugJson
@@ -33,6 +35,8 @@ import org.webrtc.VideoSink
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Locale
+import java.util.Timer
+import kotlin.concurrent.fixedRateTimer
 import kotlin.concurrent.thread
 
 class RobotApplication : Application() {
@@ -64,6 +68,8 @@ class RobotApp(private val ctx: Application) {
     val log = mutableStateListOf<String>()
     /** A marked-home reference request is in flight. */
     val referencing = mutableStateOf(false)
+    /** The Return-home button is held. */
+    val returningHome = mutableStateOf(false)
     val operatorUrls: List<String> = lanAddresses().map { "http://$it:$HUB_PORT/operator/" }
 
     private val main = Handler(Looper.getMainLooper())
@@ -84,8 +90,11 @@ class RobotApp(private val ctx: Application) {
     private val usbLink: ArmLink = UsbArmLink(ctx).also(::wire)
     @Volatile private var armLink: ArmLink = usbLink
 
-    // Relay rule: joints reach serial ONLY when engaged (see Relay).
-    private val relay = Relay(send = { armLink.sendJoints(it) }, sendPan = { armLink.sendCamera(it) })
+    /** Streams the park pose while the Return-home button is held; null otherwise. */
+    @Volatile private var homeTimer: Timer? = null
+
+    // Relay rule: joints reach serial ONLY when engaged (see Relay). Muted while Return home is held.
+    private val relay = Relay(send = { if (homeTimer == null) armLink.sendJoints(it) }, sendPan = { armLink.sendCamera(it) })
     private var stopOrientation: (() -> Unit)? = null
 
     init {
@@ -145,6 +154,20 @@ class RobotApp(private val ctx: Application) {
             log(if (error == null) "arm: referenced; homing" else "arm: reference failed: $error")
             ui { referencing.value = false }
         }
+    }
+
+    /**
+     * Hold-to-run, like the laptop jog buttons: while held, send the park pose at CMD_HZ and let the
+     * firmware ramp there under its own limits. On release the stream stops and the watchdog brakes.
+     */
+    fun returnHome(held: Boolean) {
+        if (held == (homeTimer != null)) return
+        homeTimer?.cancel()
+        homeTimer = if (held) fixedRateTimer("return-home", daemon = true, period = 1000L / CMD_HZ) {
+            armLink.sendJoints(ARM_PARK_DEG)
+        } else null
+        returningHome.value = held
+        log(if (held) "arm: returning to home marks (held)" else "arm: return home released")
     }
 
     /** Reset button: drop the link; Connect arm re-handshakes. */

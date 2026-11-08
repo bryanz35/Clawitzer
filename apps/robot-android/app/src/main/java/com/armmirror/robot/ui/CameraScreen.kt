@@ -13,6 +13,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -68,11 +69,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -352,6 +355,26 @@ private fun CzButton(label: String, primary: Boolean, selected: Boolean? = null,
     }
 }
 
+/** Primary-styled hold-to-run button: onHold(true) on press, onHold(false) on release, cancel or removal. */
+@Composable
+private fun HoldButton(label: String, onHold: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(4.dp)
+    Box(
+        Modifier.heightIn(min = 40.dp).clip(shape).border(1.dp, Cz.Accent, shape)
+            .semantics { role = Role.Button }
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    onHold(true)
+                    try { tryAwaitRelease() } finally { onHold(false) }
+                })
+            }
+            .padding(horizontal = 17.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Cz.A700)
+    }
+}
+
 @Composable
 private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCamera: (CameraInfo) -> Unit) {
     val cams = robot.cameras.value
@@ -402,6 +425,13 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
                         dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
                     )
                 }
+            }
+            // Only once referenced: the firmware rejects joints while HOMING and can't know where the elbow is.
+            if (arm == ArmLinkState.READY && status?.state in setOf("IDLE", "ACTIVE", "WATCHDOG")) {
+                HoldButton(
+                    if (robot.returningHome.value) "Returning to home marks… release to stop" else "Hold to return to home marks",
+                    robot::returnHome,
+                )
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Cz.Divider))
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {

@@ -31,9 +31,9 @@ and publishes status at 10 Hz.
 
 **Phone USB compatibility:** the laptop serial CLI can use the onboard CP210x/CH340-style
 bridge. The Android app uses usb-serial-for-android, whose default prober supports those
-chips, but `apps/robot-android/app/src/main/res/xml/device_filter.xml` only matches the
-Espressif VID, so attaching the board won't auto-launch the app (tap **Connect arm**).
-An explicit phone-side marked-home reference action after reset/reconnect is still missing.
+chips; `apps/robot-android/app/src/main/res/xml/device_filter.xml` matches the CP210x and
+CH340 VIDs. While the MCU reports `HOMING`, the phone's arm panel shows **Reference arm**
+(the marked-home reference, needed after every reset/reconnect unless boot auto-reference succeeded).
 The exact bridge chip and Android USB claiming behavior need verification on hardware.
 
 From the repository root, enter the pinned Nix shell:

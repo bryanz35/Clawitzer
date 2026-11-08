@@ -242,7 +242,9 @@ async function main(): Promise<void> {
           : !s.hand ? "hand lost: holding"
           : s.elbow ? "elbow implausible (forearm length off): holding" : "elbow not tracked: holding";
       } else {
-        hint = !armReady ? `arm not ready (${status?.state ?? "no status"})`
+        // Firmware stays HOMING until a marked-home reference (auto at boot only if the elbow never moved).
+        hint = status?.state === "HOMING" ? "arm not referenced: tap Reference arm on the phone"
+          : !armReady ? `arm not ready (${status?.state ?? "no status"})`
           : deadman.state === "arming" ? "hold curl…" : "curl middle, ring, little fingers to engage";
       }
       // The gripper follows the pinch whenever engaged, independent of the IK target; send() ramps toward it.

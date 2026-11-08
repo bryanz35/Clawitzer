@@ -14,6 +14,7 @@ import java.math.RoundingMode
 
 const val NUM_JOINTS = 5
 const val SERIAL_BAUD = 115200
+const val CMD_HZ = 50
 const val STATUS_HZ = 10
 const val WATCHDOG_MS = 200L
 const val SEQ_MODULUS = 0x10000
