@@ -24,8 +24,6 @@
 Quest Browser (apps/operator)                Android app (apps/robot-android)            NodeMCU-32S (firmware/arm-controller)
  hand/body tracking → filter → IK ──WebRTC data──► relay joint cmds ──USB serial──►  limits, watchdog, servos
  world-locked video panel + crop  ◄──WebRTC video── camera + phone orientation
-        ▲ ws:// direct over Wi-Fi
- IMU wearable (firmware/imu-wearable: ESP32 + 2× BNO085)
 The app also embeds an HTTP + WebSocket server on :8080: serves the operator page + signaling only (no business logic)
 ```
 
@@ -37,7 +35,6 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 | `packages/kinematics` | URDF loading, IK wrapper, limit clamping | TS + vitest |
 | `packages/filters` | One Euro filter | TS + vitest |
 | `firmware/arm-controller` | Serial parser, limits, watchdog, servo output | PlatformIO, ESP-IDF, C++17, Nix dev shell |
-| `firmware/imu-wearable` | 2× BNO085 → WebSocket server | PlatformIO, Adafruit BNO08x, links2004/WebSockets |
 | `hardware/urdf/arm.urdf` | **Single source of truth** for geometry and joint limits | URDF |
 | `tools/` | `gen-arm-config.ts` (URDF → C header), serial test CLI | TS |
 
@@ -46,13 +43,13 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 1. **WebXR in Quest Browser**, not a native Unity/Unreal app.
 2. **Plain HTTP.** The Quest uses the `chrome://flags/#unsafely-treat-insecure-origin-as-secure` dev flag for the operator origin. Do not add HTTPS, certificate or mkcert tooling.
 3. **The phone side is a native Android app** (Kotlin + Compose). It embeds the HTTP + signaling server on :8080, so there is no Termux and no phone web page. Camera, USB and sensors use native APIs, so no secure context is needed.
-4. **No Bluetooth path to the Quest.** Web Bluetooth is not usable in Quest Browser, so the IMU wearable talks to the Quest over `ws://`.
+4. **No Bluetooth path to the Quest.** Web Bluetooth is not usable in Quest Browser.
 5. **Three.js only.** No Babylon.js, no IWSDK. The IK library (closed-chain-ik) is built on Three.js.
 6. **IK uses closed-chain-ik `Solver` on the main thread.**
    - Never use `WorkerSolver`: it needs SharedArrayBuffer, which isn't available in Chromium on Android.
    - The 5-DOF arm can't match a full 6-DOF hand pose. The goal constrains position + 2 orientation DOF.
    - The sacrificed axis is TBD and is recorded in `arm.urdf` comments.
-7. **Hybrid tracking.** Quest hand/body tracking is primary. The IMU wearable is the fallback when joint poses are null or low-confidence.
+7. **Quest-only tracking.** Quest hand/body tracking is the only source of hand pose. No IMU wearable or IMU fusion. Null or low-confidence poses hold the last good pose (safety invariant 5).
 8. **Video.**
    - Wide-FOV capture, shown on a world-locked panel.
    - Crop offset = head orientation − phone orientation (the phone rides the stand, so its sensor gives the true camera pose).
@@ -94,9 +91,6 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - `debug`: `{on}` (phone app's debug switch → in-VR arm model; resent 1 Hz)
 - `track`: `{mode: "hand" | "elbow"}` (phone app's hand-tracking choice; resent 1 Hz)
 - `status`: mirrors the serial status line.
-
-**IMU wearable WebSocket (wearable → Quest), ~100 Hz:** `{t:"imu", seq, forearm:q, hand:q}`.
-- Use BNO085 **game rotation vector**, which ignores the magnetometer (servos distort magnetic readings).
 
 ## Commands
 
@@ -157,4 +151,4 @@ pio device monitor -d firmware/arm-controller
 2. The phone app serves the operator page; the Quest connects; head pose drives the pan/tilt stand.
 3. Quest hand tracking → IK → arm, with the deadman gesture. The HUD shows commanded and reported state; an in-VR arm model of the commanded pose appears only when the phone app's debug switch is on.
 4. Video stream with wide-FOV crop.
-5. Stretch goals: IMU fallback, IOBT elbow fusion, polish.
+5. Stretch goals: IOBT (Quest body tracking) elbow fusion, polish.

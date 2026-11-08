@@ -12,8 +12,6 @@
 | Servo power supply | 1 | TODO: voltage/current. Separate from USB; shared ground. |
 | Physical e-stop (latching, cuts servo power) | 1 | TODO: part. Optional sense line to a GPIO (see firmware `kEstopSensePin`). |
 | USB-C OTG cable (phone ↔ ESP32) | 1 | TODO |
-| ESP32 (IMU wearable) | 1 | TODO(open-item): board. Stretch goal. |
-| BNO085 breakout | 2 | Forearm + hand, I2C 0x4A / 0x4B. Stretch goal. |
 | Wi-Fi router (or phone hotspot) | 1 | Venue Wi-Fi often blocks device-to-device traffic. |
 | Gripper | 1 | Yes: j5, rack and pinion on a 25 kg hobby servo. |
 | Structural parts / fasteners | — | TODO: from CAD (`hardware/cad/`). |

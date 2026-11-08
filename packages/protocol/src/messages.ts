@@ -61,16 +61,6 @@ export interface TrackMsg {
   mode: TrackMode;
 }
 
-// ── IMU wearable WebSocket (wearable → Quest) ──────────────────────────────
-
-export interface ImuMsg {
-  t: "imu";
-  seq: number;
-  /** BNO085 game rotation vector (no magnetometer). Sensor frame; mapping to WebXR is done on the Quest. */
-  forearm: Quat;
-  hand: Quat;
-}
-
 // ── WebRTC signaling over ws://<host>/signal ───────────────────────────────
 
 export type PeerRole = "operator" | "robot";
@@ -110,7 +100,7 @@ export interface PeerMsg {
 
 export type ControlMsg = JointsMsg | PanMsg | CamOrientMsg | StatusMsg | DebugMsg | TrackMsg;
 export type SignalMsg = OfferMsg | AnswerMsg | IceMsg | PeerMsg;
-export type Message = ControlMsg | ImuMsg | SignalMsg;
+export type Message = ControlMsg | SignalMsg;
 
 // ── Type guards ────────────────────────────────────────────────────────────
 
@@ -166,10 +156,6 @@ export function isDebugMsg(x: unknown): x is DebugMsg {
 
 export function isTrackMsg(x: unknown): x is TrackMsg {
   return isObj(x) && x.t === "track" && typeof x.mode === "string" && (TRACK_MODES as readonly string[]).includes(x.mode);
-}
-
-export function isImuMsg(x: unknown): x is ImuMsg {
-  return isObj(x) && x.t === "imu" && isSeq(x.seq) && isQuat(x.forearm) && isQuat(x.hand);
 }
 
 export function isOfferMsg(x: unknown): x is OfferMsg {

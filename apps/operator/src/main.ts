@@ -3,7 +3,6 @@
 // Query params:
 //   ?emulate=1      install IWER (Meta's WebXR emulator, Quest 3 preset) for desktop testing
 //   ?mockRobot=1    no WebRTC peer; commands are echoed back locally
-//   ?imu=ws://…     IMU wearable fallback (stretch)
 //   ?signal=ws://…  signaling URL override (default ws://<page host>:8080/signal)
 //   ?hand=left      track the left hand (default right)
 //   ?fov=80         horizontal degrees the whole camera frame spans in the headset
@@ -31,8 +30,7 @@ import { Clutch } from "./clutch";
 import { DebugArm } from "./debug-arm";
 import { Deadman } from "./deadman";
 import { ElbowMirror } from "./elbow-mirror";
-import { formatHead, formatJoints, Hud } from "./hud";
-import { ImuClient } from "./imu";
+import { formatHandPitch, formatHead, formatJoints, Hud } from "./hud";
 import { OperatorLink, type LinkState } from "./link";
 import { readTracking } from "./tracking";
 import { headYawPitch, panCommandDeg, VideoPanel } from "./video";
@@ -151,6 +149,7 @@ async function main(): Promise<void> {
   let panDeg = 90; // firmware's boot pan
   let lastSendMs = 0;
   let hint = "";
+  let handPitch = "";
   let headQ: Quat | null = null;
 
   const link = MOCK_ROBOT ? null : new OperatorLink(SIGNAL_URL);
@@ -167,8 +166,6 @@ async function main(): Promise<void> {
       else if (msg.t === "track") track = msg.mode;
     };
   }
-  const imuUrl = params.get("imu");
-  const imu = imuUrl ? new ImuClient(imuUrl) : null;
 
   function send(engaged: boolean, nowMs: number): void {
     if (nowMs - lastSendMs < 1000 / CMD_HZ) return;
@@ -197,6 +194,7 @@ async function main(): Promise<void> {
     const ref = renderer.xr.getReferenceSpace();
     if (frame && ref) {
       const s = readTracking(frame, ref, HAND);
+      handPitch = formatHandPitch(s.hand);
       headQ = s.head?.orientation ?? null;
       // No fresh status, or homing/e-stop (incl. a reset mid-pinch), releases the deadman and blocks engage.
       const status = freshStatus();
@@ -231,10 +229,10 @@ async function main(): Promise<void> {
         hint = lastIK.stepRejected
           ? "jump too large: slow down, or release and re-pinch"
           : lastIK.reachable ? "" : "out of reach (clamped)";
-        // TODO(stretch): when s.hand is null, feed an IMU-derived hand pose (imu.latest()) to the same clutch.
       } else if (deadman.engaged) {
         // Hold the last good pose (safety invariant 5).
-        hint = anchored !== track ? "tracking mode changed: release and re-pinch" : "elbow not tracked: holding";
+        hint = anchored !== track ? "tracking mode changed: release and re-pinch"
+          : s.hand && s.elbow ? "elbow implausible (forearm length off): holding" : "elbow not tracked: holding";
       } else {
         hint = !armReady ? `arm not ready (${status?.state ?? "no status"})`
           : deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
@@ -249,9 +247,9 @@ async function main(): Promise<void> {
 
     const lines = [
       ...formatHead(headQ),
-      `link: ${linkState}   deadman: ${deadman.state}   arm: ${freshStatus()?.state ?? (lastStatus ? "STALE (no status)" : "?")}   track: ${track}`,
+      `link: ${linkState}   deadman: ${deadman.state}   arm: ${freshStatus()?.state ?? (lastStatus ? "STALE (no status)" : "?")}   track: ${track}${track === "elbow" && elbowMirror.forearm ? ` (forearm ${elbowMirror.forearm.toFixed(3)} m)` : ""}`,
       ...formatJoints(commanded, freshStatus()?.deg ?? null, model.limits, lastIK),
-      imu ? `imu: ${imu.latest() ? "live" : "stale"}` : "",
+      handPitch,
       hint,
     ].filter(Boolean);
     statusEl.textContent = lines.join("\n");

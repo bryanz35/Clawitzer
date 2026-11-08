@@ -1,10 +1,11 @@
 // In-VR text panel. DOM elements aren't drawn in an immersive session, so status goes on a canvas
 // texture attached to the camera (head-locked). Redraws are throttled: canvas → GPU upload isn't free on Quest.
 
-import { CanvasTexture, Euler, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace } from "three";
+import { CanvasTexture, Euler, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, SRGBColorSpace, Vector3 } from "three";
 import type { Quat } from "@arm-mirror/protocol";
 import { DEG, type IKResult, type JointLimits } from "@arm-mirror/kinematics";
 import { JOINT_LABELS } from "./joint-jog";
+import type { HandSample } from "./tracking";
 
 const W = 1024;
 const H = 768;
@@ -19,6 +20,14 @@ export function formatHead(q: Quat | null): string[] {
     `yaw ${d(e.y)}°  pitch ${d(e.x)}°  roll ${d(e.z)}°`,
     `q [${q.map((v) => v.toFixed(3)).join(", ")}]`,
   ];
+}
+
+/** Hand elevation (+ up) from the wrist→knuckle positions and from the wrist joint frame's −Z, to see whether tracking registers wrist flex. */
+export function formatHandPitch(hand: HandSample | null): string {
+  if (!hand) return "hand pitch: no hand";
+  const joints = new Vector3(...hand.knuckle).sub(new Vector3(...hand.wrist.position)).normalize();
+  const frame = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(...hand.wrist.orientation));
+  return `hand pitch: joints ${signedDeg(Math.asin(joints.y) * DEG)}  wrist frame ${signedDeg(Math.asin(frame.y) * DEG)}`;
 }
 
 const BAR_SLOTS = 9;

@@ -76,7 +76,3 @@ The phone app's embedded hub relays operator messages to its in-process robot pe
 | `answer` | robot | `sdp` |
 | `ice` | either | `candidate {candidate, sdpMid, sdpMLineIndex, usernameFragment?}` |
 | `peer` | server | `role`, `present`. Sent when the other role connects or leaves; the operator (re)offers on `robot present`. |
-
-## IMU wearable: `ws://<wearable-ip>:81`, ~100 Hz
-
-`{t:"imu", seq, forearm:[x,y,z,w], hand:[x,y,z,w]}`. These are BNO085 **game rotation vectors** (no magnetometer), each in its own sensor frame. The Quest maps them to WebXR after a calibration that is still TODO.

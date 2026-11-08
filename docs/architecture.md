@@ -4,8 +4,6 @@
 Quest Browser (apps/operator)                Android app (apps/robot-android)            NodeMCU-32S (firmware/arm-controller)
  hand/body tracking → filter → IK ──WebRTC data──► relay joint cmds ──USB serial──►  limits, watchdog, servos
  world-locked video panel + crop  ◄──WebRTC video── camera + phone orientation
-        ▲ ws:// direct over Wi-Fi
- IMU wearable (firmware/imu-wearable: ESP32 + 2× BNO085)
 The app also embeds an HTTP + WebSocket server on :8080: serves the operator page + signaling only (no business logic)
 ```
 
@@ -15,7 +13,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 2. `deadman.ts` decides whether the arm should follow: an index–thumb pinch held for 150 ms, with the palm facing away from the head. The palm-toward-head pinch is reserved by the system.
 3. While engaged:
    - `clutch.ts` maps the hand's motion *since engage* onto the arm's tool pose at engage. The knuckle displacement and wrist rotation are expressed in the operator's facing frame (head yaw at engage), then converted to the arm base frame (`xrToArmVec`/`xrToArmQuat`). Only hand tracking is needed. This is the default `hand` mode.
-   - Or, in `elbow` mode (phone app's **Hand tracking** choice, `track {mode}`), `elbow-mirror.ts` places the operator's elbow→knuckle vector at the arm's j2 pivot and uses the wrist orientation directly, in the same facing frame. It needs the body-tracking elbow (holds without it) and blends from the arm's pose at engage over 1.5 s. A mode change mid-pinch holds until the next pinch.
+   - Or, in `elbow` mode (phone app's **Hand tracking** choice, `track {mode}`), `elbow-mirror.ts` places the operator's elbow→knuckle vector at the arm's j2 pivot and uses the hand orientation directly (pointing direction from the wrist→knuckle positions tilted 20° down toward the pinching fingers, roll from the wrist frame), in the same facing frame. It needs the body-tracking elbow (holds without it) and blends from the arm's pose at engage over 1.5 s. Elbow fusion: the body elbow sets only the forearm's direction; the forearm hangs off the hand-tracked wrist at a length averaged over that blend, and a frame whose elbow→wrist length is more than 20% off is dropped (hold). A mode change mid-pinch holds until the next pinch.
    - The pose is One Euro filtered, then solved by `ArmIK` on the main thread.
    - The IK clamps to URDF limits and rejects any per-frame jump above `MAX_JOINT_STEP_DEG`.
    - The HUD shows each joint's commanded and reported angle, where it sits within its limits, and the IK result (ok / out of reach / step rejected, clamped, position and rotation error).
@@ -61,8 +59,6 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - `SerialTransport` owns UART0 GPIO1/3 through the onboard USB bridge with bounded nonblocking partial-line writes. UART1 serves the TMC on configured pins. SDK console/log output is disabled to avoid interleaved frames.
 - `app_main` composes these modules, retains calibration replies under TX backpressure, runs the fixed 100 Hz session tick and emits status at 10 Hz. Status reports measured elbow position when referenced; other axes report firmware setpoints. E-stop sense also cancels step pulses in the timer ISR. Long stalls resynchronize rather than burst through missed ticks.
 - PlatformIO selects `framework = espidf`; no Arduino or ESP32Servo dependency. The pinned Nix flake provides an FHS development shell and noninteractive runner; see the root README.
-
-**firmware/imu-wearable (stretch).** Two BNO085s (game rotation vector, no magnetometer) streaming `imu` JSON at ~100 Hz over a WebSocket server on :81. The Quest connects directly with `?imu=ws://…`.
 
 **hardware/urdf/arm.urdf.** The single source of truth for geometry, limits and home pose (`<arm_mirror home acceleration>`). `npm run gen:arm-config` turns it into the firmware header.
 
