@@ -16,7 +16,11 @@ export interface HandSample {
   knuckle: Vec3;
   thumbTip: Vec3;
   indexTip: Vec3;
+  /** Middle, ring and little fingers: the deadman curl. */
+  curlFingers: { knuckle: Vec3; tip: Vec3 }[];
 }
+
+const CURL_FINGERS = ["middle-finger", "ring-finger", "pinky-finger"] as const;
 
 export interface TrackingSample {
   hand: HandSample | null;
@@ -54,8 +58,14 @@ function readHand(frame: XRFrame, ref: XRReferenceSpace, side: XRHandedness): Ha
     const knuckle = jointPose(frame, source.hand, "middle-finger-phalanx-proximal", ref);
     const thumbTip = jointPose(frame, source.hand, "thumb-tip", ref);
     const indexTip = jointPose(frame, source.hand, "index-finger-tip", ref);
+    const xrHand = source.hand;
+    const curlFingers = CURL_FINGERS.map((f) => ({
+      knuckle: jointPose(frame, xrHand, `${f}-phalanx-proximal`, ref)?.position,
+      tip: jointPose(frame, xrHand, `${f}-tip`, ref)?.position,
+    }));
     if (!wrist || !knuckle || !thumbTip || !indexTip) return null;
-    return { wrist, knuckle: knuckle.position, thumbTip: thumbTip.position, indexTip: indexTip.position };
+    if (!curlFingers.every((f): f is { knuckle: Vec3; tip: Vec3 } => !!f.knuckle && !!f.tip)) return null;
+    return { wrist, knuckle: knuckle.position, thumbTip: thumbTip.position, indexTip: indexTip.position, curlFingers };
   }
   return null;
 }

@@ -25,7 +25,7 @@ function head(yawDeg: number): Pose {
 }
 
 function hand(knuckle: Vec3, orientation: Quaternion): HandSample {
-  return { wrist: { position: knuckle, orientation: q(orientation) }, knuckle, thumbTip: knuckle, indexTip: knuckle };
+  return { wrist: { position: knuckle, orientation: q(orientation) }, knuckle, thumbTip: knuckle, indexTip: knuckle, curlFingers: [] };
 }
 
 function expectPose(actual: { p: Vec3; q: Quat }, expected: ToolPose): void {

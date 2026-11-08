@@ -24,13 +24,14 @@ import {
   type StatusMsg,
   type TrackMode,
 } from "@arm-mirror/protocol";
-import { ArmIK, loadArm, type IKResult, type Vec3 } from "@arm-mirror/kinematics";
+import { ArmIK, DEG, loadArm, type IKResult, type Vec3 } from "@arm-mirror/kinematics";
 import { OneEuroFilter, OneEuroQuatFilter } from "@arm-mirror/filters";
 import urdfText from "../../../hardware/urdf/arm.urdf?raw";
 import { Clutch } from "./clutch";
 import { DebugArm } from "./debug-arm";
 import { Deadman } from "./deadman";
 import { ElbowMirror } from "./elbow-mirror";
+import { GRIPPER, gripperDeg, rampDeg } from "./gripper";
 import { formatHead, formatJoints, Hud } from "./hud";
 import { ImuClient } from "./imu";
 import { OperatorLink, type LinkState } from "./link";
@@ -133,12 +134,16 @@ async function main(): Promise<void> {
   const clutch = new Clutch();
   const elbowMirror = new ElbowMirror(model);
   let track: TrackMode = params.get("track") === "elbow" ? "elbow" : "hand";
-  /** Mapping anchored at the last engage; a different `track` holds the arm until the next pinch. */
+  /** Mapping anchored at the last engage; a different `track` holds the arm until the next engage. */
   let anchored: TrackMode = track;
   let lastIK: IKResult | null = null;
   const posFilter = [0, 1, 2].map(() => new OneEuroFilter());
   const quatFilter = new OneEuroQuatFilter();
   let commanded: JointDeg = ik.deg;
+  let gripDeg = commanded[GRIPPER];
+  let gripTarget = gripDeg;
+  // Ramp at the URDF velocity limit firmware enforces anyway, so the engage jump is smooth and the HUD stays honest.
+  const GRIP_STEP_DEG = model.limits[GRIPPER].velocity * DEG / CMD_HZ;
   let lastStatus: StatusMsg | null = null;
   let lastStatusMs = -Infinity;
   const freshStatus = (): StatusMsg | null => (performance.now() - lastStatusMs <= STATUS_STALE_MS ? lastStatus : null);
@@ -175,6 +180,7 @@ async function main(): Promise<void> {
     // Advance by the period (not to nowMs) so frame-locked sends average CMD_HZ; the max() avoids bursts after a stall.
     lastSendMs = Math.max(lastSendMs + 1000 / CMD_HZ, nowMs - 1000 / CMD_HZ);
     seq = nextSeq(seq);
+    if (engaged) gripDeg = commanded[GRIPPER] = rampDeg(gripDeg, gripTarget, GRIP_STEP_DEG);
     const msg: JointsMsg = { t: "joints", seq, deg: commanded, engaged };
     if (link) {
       link.send(msg);
@@ -198,16 +204,17 @@ async function main(): Promise<void> {
     if (frame && ref) {
       const s = readTracking(frame, ref, HAND);
       headQ = s.head?.orientation ?? null;
-      // No fresh status, or homing/e-stop (incl. a reset mid-pinch), releases the deadman and blocks engage.
+      // No fresh status, or homing/e-stop (incl. a reset mid-engage), releases the deadman and blocks engage.
       const status = freshStatus();
       const armReady = status !== null && ENGAGEABLE.includes(status.state);
-      const event = deadman.update(armReady ? s.hand : null, s.head, timeMs);
+      const event = armReady ? deadman.update(s.hand, s.head, timeMs) : deadman.release();
 
       if (event === "engage" && status) {
         // Step-check the IK against where the arm really is, not where we last asked it to be.
         ik.setCurrent(status.deg);
         // Hold where the arm is until IK runs; a stale `commanded` from an earlier session would drive it there.
         commanded = ik.deg;
+        gripDeg = gripTarget = commanded[GRIPPER];
         posFilter.forEach((f) => f.reset());
         quatFilter.reset();
         lastIK = null;
@@ -229,16 +236,20 @@ async function main(): Promise<void> {
         lastIK = ik.solve(p, q);
         commanded = lastIK.deg;
         hint = lastIK.stepRejected
-          ? "jump too large: slow down, or release and re-pinch"
+          ? "jump too large: slow down, or open hand and re-curl"
           : lastIK.reachable ? "" : "out of reach (clamped)";
         // TODO(stretch): when s.hand is null, feed an IMU-derived hand pose (imu.latest()) to the same clutch.
       } else if (deadman.engaged) {
         // Hold the last good pose (safety invariant 5).
-        hint = anchored !== track ? "tracking mode changed: release and re-pinch" : "elbow not tracked: holding";
+        hint = anchored !== track ? "tracking mode changed: open hand and re-curl"
+          : !s.hand ? "hand lost: holding" : "elbow not tracked: holding";
       } else {
         hint = !armReady ? `arm not ready (${status?.state ?? "no status"})`
-          : deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
+          : deadman.state === "arming" ? "hold curl…" : "curl middle, ring, little fingers to engage";
       }
+      // The gripper follows the pinch whenever engaged, independent of the IK target; send() ramps toward it.
+      if (deadman.engaged && s.hand) gripTarget = gripperDeg(s.hand, model.limits[GRIPPER]);
+      commanded[GRIPPER] = gripDeg;
 
       send(deadman.engaged, timeMs);
       const panSettled = panSinceMs !== null && timeMs - panSinceMs >= PAN_SETTLE_MS;

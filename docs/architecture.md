@@ -11,8 +11,8 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 ## Data flow, one control frame
 
-1. The Quest renders an XR frame. `tracking.ts` reads the wrist, the middle-finger knuckle, the thumb and index tips, the elbow (`XRFrame.body`) and the head. Missing poses are `null`.
-2. `deadman.ts` decides whether the arm should follow: an index–thumb pinch held for 150 ms, with the palm facing away from the head. The palm-toward-head pinch is reserved by the system.
+1. The Quest renders an XR frame. `tracking.ts` reads the wrist, the middle-finger knuckle, the thumb and index tips, the middle/ring/little knuckles and tips, the elbow (`XRFrame.body`) and the head. Missing poses are `null`.
+2. `deadman.ts` decides whether the arm should follow: middle, ring and little fingers curled (mean tip/knuckle distance-from-wrist ratio) for 150 ms. It releases only when the fingers are clearly extended or tracking is lost for over 500 ms; half-curled readings keep the state. `gripper.ts` maps the thumb–index gap to the gripper (`j5`) while engaged, ramped at the URDF velocity limit.
 3. While engaged:
    - `clutch.ts` maps the hand's motion *since engage* onto the arm's tool pose at engage. The knuckle displacement and wrist rotation are expressed in the operator's facing frame (head yaw at engage), then converted to the arm base frame (`xrToArmVec`/`xrToArmQuat`). Only hand tracking is needed. This is the default `hand` mode.
    - Or, in `elbow` mode (phone app's **Hand tracking** choice, `track {mode}`), `elbow-mirror.ts` places the operator's elbow→knuckle vector at the arm's j2 pivot and uses the wrist orientation directly, in the same facing frame. It needs the body-tracking elbow (holds without it) and blends from the arm's pose at engage over 1.5 s. A mode change mid-pinch holds until the next pinch.

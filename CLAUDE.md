@@ -63,7 +63,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 1. **Firmware enforces limits.** Joint position, velocity and acceleration limits live in firmware. Client-side clamping is additional, never a replacement.
 2. **Watchdog.** No valid command for **200 ms** → firmware holds position and reports `WATCHDOG`.
-3. **Deadman.** The arm follows only while the deadman gesture (pinch) is held. On release, it holds.
+3. **Deadman.** The arm follows only while the deadman gesture (middle, ring and little fingers curled) is held. On release (fingers clearly extended, or hand/head tracking lost for over 500 ms), it holds. A half-curled reading or a shorter dropout keeps the current state; the arm holds while the hand is missing. The thumb–index pinch drives the gripper.
 4. **Soft start.** On boot, move slowly to the **park pose** (`<arm_mirror park>`, defaulting to the home pose). Ignore commands until homing completes. Zero angles stay at the home pose, so a joint whose physical rest differs can park elsewhere without shifting the angle frame. Reference is restored automatically only when the motor-shaft encoder still reads the angle recorded at the last marked-home reference; any other reading still requires manual marked-home confirmation.
 5. **Tracking dropouts.** A null or invalid pose → hold the last good pose. Never interpolate from zero/origin.
 6. **Unreachable IK target.** Clamp to the nearest reachable pose. Reject solutions that jump more than `MAX_JOINT_STEP_DEG` per frame.
@@ -132,7 +132,7 @@ pio device monitor -d firmware/arm-controller
 
 **Quest Browser:**
 - The dev flag needs the exact origin, including the port. Restart the browser after setting it.
-- The palm pinch gesture is reserved by the system. Don't use it as the deadman.
+- The palm pinch gesture (palm toward you) is reserved by the system. The gripper pinch with the palm turned toward the head may open the system menu; the session then stops sending and the firmware watchdog holds.
 
 **Android / phone:**
 - Another app or the system may hold the USB interface, which makes the claim fail. Test the exact board early.
