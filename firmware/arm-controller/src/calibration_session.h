@@ -15,6 +15,13 @@ class CalibrationSession {
   void begin(uint32_t nowMs);
   void tick(uint32_t nowMs, float dtSec);
   bool execute(const char* line, size_t length, uint32_t nowMs);
+  /** Independent camera servo; works without calibration/reference, but respects e-stop. */
+  bool setCamera(float deg, uint16_t seq, uint32_t nowMs);
+  uint16_t cameraSeq() const { return lastCameraSequence_; }
+  float cameraDeg() const { return cameraDeg_; }
+  bool cameraActive() const { return io_.cameraActive(); }
+  bool cameraStatusPending() const { return cameraStatusPending_; }
+  void consumeCameraStatus() { cameraStatusPending_ = false; }
   bool normalReady() const {
     return !calibrating_ && validConfig_ && referenced_ &&
            preparedMask_ == actuators::kAllOutputs && !faulted_;
@@ -48,6 +55,10 @@ class CalibrationSession {
   const char* fault_ = "none";
   bool haveSequence_ = false;
   uint16_t lastSequence_ = 0;
+  bool haveCameraSequence_ = false;
+  uint16_t lastCameraSequence_ = 0;
+  float cameraDeg_ = (proto::kCameraMinDeg + proto::kCameraMaxDeg) / 2.0f;
+  bool cameraStatusPending_ = true;
   uint32_t leaseMs_ = 0;
   uint32_t lastJogMs_ = 0;
   uint8_t armedMask_ = 0;

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <stdio.h>
 #include <string.h>
+#include "board_config.h"
 #include "hardware_protocol.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -21,6 +22,8 @@ constexpr uart_port_t kUart = UART_NUM_1;
 constexpr spi_host_device_t kSpi = SPI2_HOST;
 constexpr ledc_mode_t kPwmMode = LEDC_LOW_SPEED_MODE;
 constexpr ledc_timer_t kPwmTimer = LEDC_TIMER_0;
+constexpr ledc_timer_t kCameraTimer = LEDC_TIMER_1;
+constexpr ledc_channel_t kCameraChannel = LEDC_CHANNEL_4;
 constexpr uint32_t kPwmPeriodUs = 20000;
 constexpr int64_t kSpiTimeoutUs = 1000;
 constexpr int64_t kUartTimeoutUs = 25000;  // Setup only; never used in the control loop.
@@ -35,7 +38,10 @@ gpio_num_t gpio(int32_t pin) { return static_cast<gpio_num_t>(pin); }
 ledc_channel_t channel(unsigned index) { return static_cast<ledc_channel_t>(index); }
 }  // namespace
 
-EspActuatorIO::~EspActuatorIO() { release(); }
+EspActuatorIO::~EspActuatorIO() {
+  release();
+  releaseCamera();
+}
 
 const char* EspActuatorIO::error() const {
   portENTER_CRITICAL(&mux_);
@@ -81,6 +87,33 @@ void EspActuatorIO::disableOutputs() {
     }
   }
   servoActive_ = 0;
+  if (cameraConfigured_) {
+    const esp_err_t stop = ledc_stop(kPwmMode, kCameraChannel, 0);
+    if (stop != ESP_OK && !error_[0]) {
+      snprintf(error_, sizeof error_, "camera PWM stop: %s", esp_err_to_name(stop));
+    }
+    gpio_set_level(gpio(kCameraServoPin), 0);
+    esp_rom_gpio_connect_out_signal(kCameraServoPin, SIG_GPIO_OUT_IDX, false, false);
+    gpio_set_direction(gpio(kCameraServoPin), GPIO_MODE_OUTPUT);
+    cameraActive_ = false;
+  }
+}
+
+bool EspActuatorIO::releaseCamera() {
+  if (!cameraConfigured_) return true;
+  disableOutputs();
+  cameraConfigured_ = false;
+  const esp_err_t paused = ledc_timer_pause(kPwmMode, kCameraTimer);
+  ledc_timer_config_t pwm{};
+  pwm.speed_mode = kPwmMode;
+  pwm.timer_num = kCameraTimer;
+  pwm.deconfigure = true;
+  const esp_err_t released = ledc_timer_config(&pwm);
+  if (paused != ESP_OK || released != ESP_OK) {
+    if (!error_[0]) snprintf(error_, sizeof error_, "camera PWM timer release failed");
+    return false;
+  }
+  return true;
 }
 
 bool EspActuatorIO::release() {
@@ -256,6 +289,70 @@ bool EspActuatorIO::configure(const Config& config, uint8_t outputMask) {
   if (error()[0] || estopActive()) { fault("ESTOP"); release(); return false; }
   return true;
 }
+
+bool EspActuatorIO::configureCamera(const Config& board) {
+  if (cameraConfigured_ && !releaseCamera()) return false;
+  error_[0] = '\0';
+  portENTER_CRITICAL(&mux_);
+  estopTripped_ = false;
+  portEXIT_CRITICAL(&mux_);
+  if (!outputPin(kCameraServoPin) || !inputPin(board.pins.estop)) return fault("invalid camera/e-stop GPIO");
+  config_ = board;
+  gpio_config_t estop{};
+  estop.pin_bit_mask = 1ULL << board.pins.estop;
+  estop.mode = GPIO_MODE_INPUT;
+  estop.pull_up_en = board.pins.estop < 34 && board.pins.estopActiveLevel
+                         ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
+  estop.pull_down_en = board.pins.estop < 34 && !board.pins.estopActiveLevel
+                           ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE;
+  if (!check(gpio_config(&estop), "e-stop input")) return false;
+  estopReady_ = true;
+
+  ledc_timer_config_t pwm{};
+  pwm.speed_mode = kPwmMode;
+  pwm.duty_resolution = LEDC_TIMER_14_BIT;
+  pwm.timer_num = kCameraTimer;
+  pwm.freq_hz = 50;
+  pwm.clk_cfg = LEDC_AUTO_CLK;
+  if (!check(ledc_timer_config(&pwm), "camera PWM timer")) return false;
+  ledc_channel_config_t servo{};
+  servo.gpio_num = kCameraServoPin;
+  servo.speed_mode = kPwmMode;
+  servo.channel = kCameraChannel;
+  servo.intr_type = LEDC_INTR_DISABLE;
+  servo.timer_sel = kCameraTimer;
+  servo.duty = 0;
+  if (!check(ledc_channel_config(&servo), "camera PWM channel")) {
+    ledc_timer_pause(kPwmMode, kCameraTimer);
+    return false;
+  }
+  cameraConfigured_ = true;
+  disableOutputs();
+  if (error_[0]) { releaseCamera(); return false; }
+  return true;
+}
+
+bool EspActuatorIO::cameraPulse(float deg) {
+  if (!cameraConfigured_ || !std::isfinite(deg) || deg < kCameraMinDeg || deg > kCameraMaxDeg) return false;
+  if (estopActive()) return false;
+  const double span = static_cast<double>(kCameraMaxDeg) - kCameraMinDeg;
+  const int32_t us = static_cast<int32_t>(lround(kCameraMinUs +
+      (static_cast<double>(deg) - kCameraMinDeg) *
+          (kCameraMaxUs - kCameraMinUs) / span));
+  if (us < kCameraMinUs || us > kCameraMaxUs) return false;
+  const uint32_t duty = (static_cast<uint32_t>(us) * (1u << 14) + kPwmPeriodUs / 2) / kPwmPeriodUs;
+  if (!cameraActive_) {
+    if (!check(ledc_set_duty(kPwmMode, kCameraChannel, 0), "camera PWM reset duty") ||
+        !check(ledc_update_duty(kPwmMode, kCameraChannel), "camera PWM reset update") ||
+        !check(ledc_set_pin(kCameraServoPin, kPwmMode, kCameraChannel), "camera PWM reconnect")) return false;
+  }
+  if (!check(ledc_set_duty(kPwmMode, kCameraChannel, duty), "camera PWM duty") ||
+      !check(ledc_update_duty(kPwmMode, kCameraChannel), "camera PWM update")) return false;
+  cameraActive_ = true;
+  return true;
+}
+
+bool EspActuatorIO::cameraActive() const { return cameraConfigured_ && cameraActive_; }
 
 bool EspActuatorIO::setupUart() {
   // TMC2209 datasheet sections4/5/9/13; accessible manufacturer-datasheet mirror:

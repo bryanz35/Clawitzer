@@ -19,6 +19,13 @@ describe("independent calibration request frames", () => {
     expect(seqIsNewer(0, 65535)).toBe(true);
   });
 
+  it("accepts uncapped relative jogs within the signed counter representation", () => {
+    for (const microsteps of [-2147483648, -3200, 3200, 2147483647]) {
+      const command: CalibrationCommand = { verb: "step", microsteps };
+      expect(parseCalibration(encodeCalibration(7, command))).toEqual({ seq: 7, command });
+    }
+  });
+
   it("encodes simultaneous multi-servo poses atomically", () => {
     const command: CalibrationCommand = { verb: "pose", values: [[1, 1600], [2, 1400]] };
     expect(parseCalibration(wire("C", "0,pose,1,1600,2,1400"))).toEqual({ seq: 0, command });
@@ -31,7 +38,7 @@ describe("independent calibration request frames", () => {
 
   it("rejects invalid sequences, unsupported verbs, extra arguments and unsafe raw jog grammar", () => {
     for (const seq of [-1, 65536, 1.5, NaN]) expect(() => encodeCalibration(seq, { verb: "status" })).toThrow();
-    for (const body of ["65536,status", "-1,status", "1.0,status", "1,status,extra", "1,sweep", "1,keep,1", "1,jog,4,5", "1,jog,1,2001", "1,jog,1,0", "1,jog,1,1.5", "1,step,65", "1,step,0", "1,get,pulse", "1,get,base,0", "1,arm,all", "1,enter,yes", "1,reference,yes", "1,set,base,1", "1,set,base,NaN,2", "1,set,address,Infinity"]) {
+    for (const body of ["65536,status", "-1,status", "1.0,status", "1,status,extra", "1,sweep", "1,keep,1", "1,jog,4,5", "1,jog,1,2001", "1,jog,1,0", "1,jog,1,1.5", "1,step,2147483648", "1,step,-2147483649", "1,step,0", "1,step,1.5", "1,get,pulse", "1,get,base,0", "1,arm,all", "1,enter,yes", "1,reference,yes", "1,set,base,1", "1,set,base,NaN,2", "1,set,address,Infinity"]) {
       expect(parseCalibration(wire("C", body)), body).toBeNull();
     }
     expect(parseCalibration(wire("C", "1,jog,1,2000"))?.command).toEqual({ verb: "jog", index: 1, deltaUs: 2000 });

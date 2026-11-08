@@ -6,16 +6,9 @@
 //   ?imu=ws://…     IMU wearable fallback (stretch)
 //   ?signal=ws://…  signaling URL override (default ws://<page host>:8080/signal)
 //   ?hand=left      track the left hand (default right)
+//   ?fov=80         horizontal degrees the whole camera frame spans in the headset
 
-import {
-  AmbientLight,
-  Color,
-  DirectionalLight,
-  GridHelper,
-  PerspectiveCamera,
-  Scene,
-  WebGLRenderer,
-} from "three";
+import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
   CMD_HZ,
   nextSeq,
@@ -84,11 +77,8 @@ async function main(): Promise<void> {
   document.body.appendChild(renderer.domElement);
 
   const scene = new Scene();
-  scene.background = new Color(0x202020);
-  scene.add(new AmbientLight(0xffffff, 0.6));
-  const sun = new DirectionalLight(0xffffff, 1.5);
-  sun.position.set(1, 3, 2);
-  scene.add(sun, new GridHelper(4, 8, 0x444444, 0x333333));
+  // The video panel is the only world content; all materials are unlit, so no lights.
+  scene.background = new Color(0x000000);
 
   const camera = new PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
   camera.position.set(0, 1.6, 0.5);
@@ -110,9 +100,10 @@ async function main(): Promise<void> {
   const elbowReach = Math.hypot(origin("j2")[0], origin("j2")[1]);
   const elbowHeight = origin("j1")[2] + origin("j2")[2];
 
-  const video = new VideoPanel();
-  video.mesh.position.set(0, 1.5, -2);
-  scene.add(video.mesh);
+  const fov = Number(params.get("fov"));
+  const video = new VideoPanel(fov > 0 && fov < 180 ? { displayHFovDeg: fov } : {});
+  video.object.position.set(0, 1.6, 0); // eye height until the first XR frame
+  scene.add(video.object);
 
   // ── State ────────────────────────────────────────────────────────────────
   const deadman = new Deadman();
@@ -184,7 +175,7 @@ async function main(): Promise<void> {
       }
 
       send(deadman.engaged, timeMs);
-      video.update(s.head?.orientation ?? null, camOrient?.q ?? null);
+      video.update(s.head, camOrient?.q ?? null);
     } else if (MOCK_ROBOT) {
       send(false, timeMs);
     }

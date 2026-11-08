@@ -10,13 +10,13 @@
 namespace {
 bool is(const char* a, const char* b) { return strcmp(a, b) == 0; }
 bool integral(double value) { return isfinite(value) && value >= INT32_MIN && value <= INT32_MAX && trunc(value) == value; }
-bool numbers(const calibration::Command& command, size_t start, double* out, size_t count) {
+bool numbers(const calibration::Command& command, size_t start, double* out, size_t count, double maximumMagnitude = 1e9) {
   if (command.argc != start + count) return false;
   for (size_t i = 0; i < count; ++i) {
     errno = 0;
     char* end = nullptr;
     out[i] = strtod(command.args[start + i], &end);
-    if (errno || end == command.args[start + i] || *end || !isfinite(out[i]) || fabs(out[i]) > 1e9) return false;
+    if (errno || end == command.args[start + i] || *end || !isfinite(out[i]) || fabs(out[i]) > maximumMagnitude) return false;
   }
   return true;
 }
@@ -42,8 +42,22 @@ void CalibrationSession::begin(uint32_t nowMs) {
   fault_ = validConfig_ ? "reference_required" : "uncalibrated";
 }
 
+bool CalibrationSession::setCamera(float deg, uint16_t seq, uint32_t nowMs) {
+  (void)nowMs;
+  if (!isfinite(deg) || deg < proto::kCameraMinDeg || deg > proto::kCameraMaxDeg) return false;
+  const uint16_t delta = static_cast<uint16_t>(seq - lastCameraSequence_);
+  if (haveCameraSequence_ && (delta == 0 || delta >= 0x8000)) return false;
+  if (!io_.cameraPulse(deg)) return false;
+  lastCameraSequence_ = seq;
+  haveCameraSequence_ = true;
+  cameraDeg_ = deg;
+  cameraStatusPending_ = true;
+  return true;
+}
+
 void CalibrationSession::disarm() {
   io_.disableOutputs();
+  cameraStatusPending_ = true;
   armedMask_ = 0;
   jogPending_ = false;
   referenced_ = false;
@@ -347,15 +361,14 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     return true;
   }
   if (is(verb, "step")) {
-    if (!numbers(cmd, 0, n, 1) || !integral(n[0]) || n[0] == 0 || fabs(n[0]) > 64 ||
-        fabs(n[0]) > draft_.motorStepsPerRev * draft_.microsteps / 36.0f) return error(fields, capacity, "step_bounds");
+    if (!numbers(cmd, 0, n, 1, 2147483648.0) || !integral(n[0]) || n[0] == 0) return error(fields, capacity, "step_bounds");
     if (!(armedMask_ & actuators::kStepperOutput)) return error(fields, capacity, "not_armed");
     if (jogPending_ && io_.stepPosition() != jogTarget_) return error(fields, capacity, "step_busy");
     // A zero rate cancels the target on disable; the IO counter is the source of truth.
     const int32_t position = io_.stepPosition();
     if ((n[0] > 0 && position > INT32_MAX - n[0]) || (n[0] < 0 && position < INT32_MIN - n[0])) return error(fields, capacity, "step_overflow");
     const int32_t target = position + static_cast<int32_t>(n[0]);
-    io_.stepTarget(target, 200.0f);
+    io_.stepTarget(target, calibration::kStepRate);
     if (*io_.error()) { fail("step_output", nowMs); return error(fields, capacity, io_.error()); }
     jogPending_ = true;
     jogTarget_ = target;

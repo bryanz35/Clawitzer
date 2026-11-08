@@ -1,6 +1,10 @@
 /** Five logical joints: base, elbow, differential roll/pitch, gripper. Must match hardware/urdf/arm.urdf. */
 export const NUM_JOINTS = 5;
 
+/** Independent camera servo: not an arm joint, not IK, not calibrated. */
+export const CAMERA_MIN_DEG = 0;
+export const CAMERA_MAX_DEG = 180;
+
 /** Phone → MCU serial link. */
 export const SERIAL_BAUD = 115200;
 

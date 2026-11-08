@@ -6,6 +6,8 @@ namespace calibration {
 
 constexpr size_t kMaxArgs = 15;  // set,pins carries a key plus fourteen GPIO values.
 constexpr size_t kTokenSize = 32;
+// Raw bench jog policy; canonical values live in packages/protocol/src/calibration.ts.
+constexpr float kStepRate = 1000.0f;
 struct Command {
   uint16_t seq = 0;
   char verb[16] = {};

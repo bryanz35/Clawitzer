@@ -21,6 +21,8 @@ class BenchIO final : public IO {
   int32_t position = 0, target = 0;
   uint8_t servoMask = 0;
   int32_t pulse[4] = {};
+  bool cameraOn = false;
+  float cameraDeg = -1;
   bool configure(const Config& config, uint8_t outputMask) override {
     disableOutputs();
     ++configureCalls;
@@ -46,8 +48,21 @@ class BenchIO final : public IO {
   int32_t stepPosition() const override { ++stepPositionReads; return position; }
   void zeroStepPosition() override { position = target = 0; }
   void enableStepper(bool value) override { enabled = value; stopped = !value && !servoMask; }
+  bool cameraPulse(float deg) override {
+    if (estop) return false;
+    cameraOn = true;
+    cameraDeg = deg;
+    return true;
+  }
+  bool cameraActive() const override { return cameraOn; }
   bool estopActive() const override { return estop; }
-  void disableOutputs() override { enabled = false; servoMask = 0; target = position; stopped = true; }
+  void disableOutputs() override {
+    enabled = false;
+    servoMask = 0;
+    cameraOn = false;
+    target = position;
+    stopped = true;
+  }
 };
 
 class MemoryStore final : public Store {
@@ -81,6 +96,41 @@ static SerialController::Result joints(SerialController& serial, uint32_t nowMs)
   SerialController::Result result = SerialController::Result::Incomplete;
   while (*line) result = serial.feed(*line++, nowMs);
   return result;
+}
+
+static SerialController::Result cameraCommand(SerialController& serial, uint16_t seq, const char* deg,
+                                              uint32_t nowMs) {
+  char payload[64], line[80];
+  const int length = snprintf(payload, sizeof payload, ",%u,%s", static_cast<unsigned>(seq), deg);
+  snprintf(line, sizeof line, "P%s*%02X\n", payload,
+           proto::crc8(reinterpret_cast<const uint8_t*>(payload), length));
+  SerialController::Result result = SerialController::Result::Incomplete;
+  for (const char* p = line; *p; p++) result = serial.feed(*p, nowMs);
+  return result;
+}
+
+void test_camera_is_independent_and_still_obeys_estop() {
+  Arm arm; BenchIO io; MemoryStore store; store.present = false;
+  CalibrationSession session(arm, io, store); SerialController serial(arm, &session);
+  session.begin(0);
+
+  TEST_ASSERT_EQUAL(SerialController::Result::Accepted, cameraCommand(serial, 1, "0.0", 10));
+  TEST_ASSERT_TRUE(io.cameraActive());
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, io.cameraDeg);
+  TEST_ASSERT_FALSE(session.normalReady());
+
+  TEST_ASSERT_EQUAL(SerialController::Result::Ignored, cameraCommand(serial, 1, "90.0", 20));
+  TEST_ASSERT_EQUAL(SerialController::Result::Malformed, cameraCommand(serial, 2, "181.0", 30));
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, io.cameraDeg);
+
+  io.estop = true;
+  TEST_ASSERT_EQUAL(SerialController::Result::Ignored, cameraCommand(serial, 2, "90.0", 40));
+  io.estop = false;
+  TEST_ASSERT_EQUAL(SerialController::Result::Accepted, cameraCommand(serial, 2, "180.0", 50));
+  TEST_ASSERT_EQUAL_FLOAT(180.0f, io.cameraDeg);
+
+  TEST_ASSERT_TRUE(command(session, 3, "enter,UNLOADED_ESTOP_READY", 60));
+  TEST_ASSERT_FALSE(io.cameraActive());
 }
 
 void test_uncalibrated_boot_and_bad_consent_cannot_enable_outputs() {
@@ -176,18 +226,71 @@ void test_pose_moves_armed_channels_atomically() {
 
 void test_step_jogs_cannot_overlap_and_timeout_cancels_pending_motion() {
   Arm arm; BenchIO io; MemoryStore store;
+  store.saved.microsteps = 16;
   CalibrationSession session(arm, io, store);
   session.begin(0);
   TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
   TEST_ASSERT_TRUE(command(session, 2, "apply", 20));
   TEST_ASSERT_TRUE(command(session, 3, "arm,stepper", 30));
-  TEST_ASSERT_TRUE(command(session, 4, "step,32", 40));
-  TEST_ASSERT_EQUAL_INT32(32, io.target);
-  TEST_ASSERT_FALSE(command(session, 5, "step,1", 50));
-  TEST_ASSERT_EQUAL_INT32(32, io.target);
-  TEST_ASSERT_FALSE(command(session, 6, "step,65", 60));
+  TEST_ASSERT_TRUE(command(session, 4, "step,1000", 40));
+  TEST_ASSERT_EQUAL_INT32(1000, io.target);
+  TEST_ASSERT_FALSE(command(session, 5, "step,1", 50, "ERR,step_busy"));
+  TEST_ASSERT_EQUAL_INT32(1000, io.target);
+  TEST_ASSERT_FALSE(command(session, 6, "step,1001", 60, "ERR,step_busy"));
   session.tick(250, 0.01f);
   TEST_ASSERT_TRUE(io.stopped);
+  TEST_ASSERT_EQUAL_INT32(io.position, io.target);
+}
+
+void test_step_jogs_allow_uncapped_travel_but_reject_invalid_and_overflowing_counts() {
+  Arm arm; BenchIO io; MemoryStore store;
+  store.saved.microsteps = 4;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
+  TEST_ASSERT_TRUE(command(session, 2, "arm,stepper", 20));
+  TEST_ASSERT_FALSE(command(session, 3, "step,0", 30, "ERR,step_bounds"));
+  TEST_ASSERT_FALSE(command(session, 4, "step,1.5", 40, "ERR,step_bounds"));
+  TEST_ASSERT_FALSE(command(session, 5, "step,2147483648", 50, "ERR,step_bounds"));
+  TEST_ASSERT_FALSE(command(session, 6, "step,-2147483649", 60, "ERR,step_bounds"));
+  TEST_ASSERT_EQUAL_INT32(0, io.target);
+  TEST_ASSERT_TRUE(command(session, 7, "step,3200", 70));
+  TEST_ASSERT_EQUAL_INT32(3200, io.target);
+  io.position = io.target;
+  TEST_ASSERT_TRUE(command(session, 8, "step,-6400", 80));
+  TEST_ASSERT_EQUAL_INT32(-3200, io.target);
+  io.position = io.target;
+  TEST_ASSERT_TRUE(command(session, 9, "step,2147483647", 90));
+  TEST_ASSERT_EQUAL_INT32(2147480447, io.target);
+  io.position = io.target;
+  TEST_ASSERT_FALSE(command(session, 10, "step,4000", 100, "ERR,step_overflow"));
+  TEST_ASSERT_EQUAL_INT32(io.position, io.target);
+  TEST_ASSERT_TRUE(command(session, 11, "step,-2147483648", 110));
+  TEST_ASSERT_EQUAL_INT32(-3201, io.target);
+  io.position = io.target;
+  TEST_ASSERT_FALSE(command(session, 12, "step,-2147483648", 120, "ERR,step_overflow"));
+  TEST_ASSERT_EQUAL_INT32(io.position, io.target);
+}
+
+void test_long_step_requires_keepalives_and_estop_still_disables_it() {
+  Arm arm; BenchIO io; MemoryStore store;
+  store.saved.microsteps = 4;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
+  TEST_ASSERT_TRUE(command(session, 2, "arm,stepper", 20));
+  TEST_ASSERT_TRUE(command(session, 3, "step,10000", 30));
+  uint16_t seq = 4;
+  for (uint32_t now = 130; now <= 5030; now += 100) {
+    TEST_ASSERT_TRUE(command(session, seq++, "keep", now));
+    session.tick(now, 0.01f);
+    TEST_ASSERT_TRUE(io.enabled);
+    TEST_ASSERT_EQUAL_INT32(10000, io.target);
+  }
+  io.estop = true;
+  session.tick(5040, 0.01f);
+  TEST_ASSERT_TRUE(io.stopped);
+  TEST_ASSERT_FALSE(io.enabled);
   TEST_ASSERT_EQUAL_INT32(io.position, io.target);
 }
 
@@ -438,10 +541,13 @@ void test_explicit_wrist_arm_recovers_from_a_failed_full_encoder_setup() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_uncalibrated_boot_and_bad_consent_cannot_enable_outputs);
+  RUN_TEST(test_camera_is_independent_and_still_obeys_estop);
   RUN_TEST(test_bench_jogs_are_exclusive_bounded_and_lease_protected);
   RUN_TEST(test_arbitrary_jog_amounts_stay_inside_the_hard_window);
   RUN_TEST(test_pose_moves_armed_channels_atomically);
   RUN_TEST(test_step_jogs_cannot_overlap_and_timeout_cancels_pending_motion);
+  RUN_TEST(test_step_jogs_allow_uncapped_travel_but_reject_invalid_and_overflowing_counts);
+  RUN_TEST(test_long_step_requires_keepalives_and_estop_still_disables_it);
   RUN_TEST(test_save_is_validated_atomic_and_gear_is_persistent_not_fixed);
   RUN_TEST(test_power_loss_requires_new_marked_reference_and_preserves_joint_sequence);
   RUN_TEST(test_encoder_following_and_read_faults_latch_outputs_off);

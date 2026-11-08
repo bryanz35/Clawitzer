@@ -4,6 +4,8 @@ import { crc8 } from "./serial";
 export const CALIBRATION_MAX_LINE = 192;
 export const CALIBRATION_ENTER_ACK = "UNLOADED_ESTOP_READY";
 export const CALIBRATION_REFERENCE_ACK = "HOME_MARK_CONFIRMED";
+// Raw bench jog policy; keep firmware calibration_protocol.h in sync.
+export const CALIBRATION_STEP_RATE = 1000; // Microsteps per second.
 export const CALIBRATION_KEY_ARITY = {
   pins: 14, estop: 1, pulse: 4, base: 2, wrist: 6, gripper: 2,
   stepper: 7, following: 1, address: 1,
@@ -83,7 +85,7 @@ export function calibrationCommandFields(command: CalibrationCommand): string[] 
       return ["pose", ...command.values.flatMap(([index, microseconds]) => [String(index), String(microseconds)])];
     }
     case "step":
-      if (!integer(command.microsteps, -64, 64) || command.microsteps === 0) throw new Error("step must be nonzero integer microsteps, at most 64");
+      if (!integer(command.microsteps, -2147483648, 2147483647) || command.microsteps === 0) throw new Error("step must be nonzero signed 32-bit integer microsteps");
       return ["step", String(command.microsteps)];
     default:
       if (!["status", "apply", "keep", "sample", "disarm", "save", "exit", "halt"].includes(command.verb)) throw new Error("unknown calibration verb");
