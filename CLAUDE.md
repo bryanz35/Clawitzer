@@ -91,6 +91,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - `joints`: `{seq, deg[5], engaged}`
 - `camOrient`: `{q, ts}`
 - `debug`: `{on}` (phone app's debug switch → in-VR arm model; resent 1 Hz)
+- `track`: `{mode: "hand" | "elbow"}` (phone app's hand-tracking choice; resent 1 Hz)
 - `status`: mirrors the serial status line.
 
 **IMU wearable WebSocket (wearable → Quest), ~100 Hz:** `{t:"imu", seq, forearm:q, hand:q}`.

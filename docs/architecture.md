@@ -14,7 +14,8 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 1. The Quest renders an XR frame. `tracking.ts` reads the wrist, the middle-finger knuckle, the thumb and index tips, the elbow (`XRFrame.body`) and the head. Missing poses are `null`.
 2. `deadman.ts` decides whether the arm should follow: an index–thumb pinch held for 150 ms, with the palm facing away from the head. The palm-toward-head pinch is reserved by the system.
 3. While engaged:
-   - `clutch.ts` maps the hand's motion *since engage* onto the arm's tool pose at engage. The knuckle displacement and wrist rotation are expressed in the operator's facing frame (head yaw at engage), then converted to the arm base frame (`xrToArmVec`/`xrToArmQuat`). Only hand tracking is needed; the body-tracking elbow is read but unused.
+   - `clutch.ts` maps the hand's motion *since engage* onto the arm's tool pose at engage. The knuckle displacement and wrist rotation are expressed in the operator's facing frame (head yaw at engage), then converted to the arm base frame (`xrToArmVec`/`xrToArmQuat`). Only hand tracking is needed. This is the default `hand` mode.
+   - Or, in `elbow` mode (phone app's **Hand tracking** choice, `track {mode}`), `elbow-mirror.ts` places the operator's elbow→knuckle vector at the arm's j2 pivot and uses the wrist orientation directly, in the same facing frame. It needs the body-tracking elbow (holds without it) and blends from the arm's pose at engage over 1.5 s. A mode change mid-pinch holds until the next pinch.
    - The pose is One Euro filtered, then solved by `ArmIK` on the main thread.
    - The IK clamps to URDF limits and rejects any per-frame jump above `MAX_JOINT_STEP_DEG`.
    - The HUD shows each joint's commanded and reported angle, where it sits within its limits, and the IK result (ok / out of reach / step rejected, clamped, position and rotation error).
@@ -33,7 +34,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 
 **apps/robot-android (native Android app, Kotlin + Compose).** One process does what the phone web page and the Termux server used to do.
 - `hub/Hub.kt` (Ktor CIO on :8080) serves the operator bundle from `assets/web/` and the `/signal?role=operator` WebSocket. The robot peer is in-process, so the hub tells the operator `peer robot present:true` on connect. A newer operator replaces the old one with close code 4000. No business logic.
-- `rtc/RobotPeer.kt` is the WebRTC answerer (libwebrtc via stream-webrtc-android). It sends the Camera2 track plus `camOrient`, `status` and `debug` on the `control` channel. No STUN: LAN host candidates only.
+- `rtc/RobotPeer.kt` is the WebRTC answerer (libwebrtc via stream-webrtc-android). It sends the Camera2 track plus `camOrient`, `status`, `debug` and `track` on the `control` channel. No STUN: LAN host candidates only.
 - `arm/Relay.kt` drops stale `joints` by seq and forwards only `engaged` ones. `arm/UsbArmLink.kt` writes them to the MCU over USB host (usb-serial-for-android). `arm/SerialSession` handshakes on every (re)connect by waiting for a status line and continuing from its seq. A "Mock MCU" switch replaces USB with a fake 10 Hz status.
 - NodeMCU-32S boards expose UART0 through a CP210x/CH340-style bridge, not CDC-ACM. usb-serial-for-android's default prober supports those chips, but `res/xml/device_filter.xml` only matches the Espressif VID, so attaching the board won't auto-launch the app. Untested on the real board. A phone-side deliberate marked-home reference action is also required after reconnect resets; the current reference workflow is the laptop CLI.
 - `sensors/Orientation.kt` sends `TYPE_ROTATION_VECTOR` (device → ENU, the same frame Chrome's AbsoluteOrientationSensor used) at ~60 Hz.

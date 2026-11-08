@@ -8,6 +8,12 @@ import type { Quat } from "@arm-mirror/protocol";
 import { xrToArmQuat, xrToArmVec, type Pose as ToolPose, type Vec3 } from "@arm-mirror/kinematics";
 import type { HandSample, Pose } from "./tracking";
 
+/** The operator's facing frame: head yaw only (rotation about +Y), so looking up/down doesn't tilt the mapping. */
+export function facingOf(head: Pose): Quaternion {
+  const yaw = new Euler().setFromQuaternion(new Quaternion(...head.orientation), "YXZ").y;
+  return new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw);
+}
+
 export class Clutch {
   private readonly handPos = new Vector3();
   private readonly handQuatInv = new Quaternion();
@@ -23,8 +29,7 @@ export class Clutch {
   engage(hand: HandSample, head: Pose, tool: ToolPose): void {
     this.handPos.set(...hand.knuckle);
     this.handQuatInv.set(...hand.wrist.orientation).invert();
-    const yaw = new Euler().setFromQuaternion(new Quaternion(...head.orientation), "YXZ").y;
-    this.facing.setFromAxisAngle(new Vector3(0, 1, 0), yaw);
+    this.facing.copy(facingOf(head));
     this.facingInv.copy(this.facing).invert();
     this.tool = tool;
   }

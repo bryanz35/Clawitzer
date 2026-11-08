@@ -1,5 +1,5 @@
 // Operator page (Quest Browser). Per XR frame:
-//   tracking → deadman → clutch (hand motion since engage) → IK (main thread) → joints @ CMD_HZ over WebRTC → phone → MCU.
+//   tracking → deadman → clutch (hand motion since engage) or elbow mirror (elbow→hand vector) → IK (main thread) → joints @ CMD_HZ over WebRTC → phone → MCU.
 // Query params:
 //   ?emulate=1      install IWER (Meta's WebXR emulator, Quest 3 preset) for desktop testing
 //   ?mockRobot=1    no WebRTC peer; commands are echoed back locally
@@ -8,6 +8,7 @@
 //   ?hand=left      track the left hand (default right)
 //   ?fov=80         horizontal degrees the whole camera frame spans in the headset
 //   ?debug=1        start with the debug arm model shown (the phone app's switch overrides it once connected)
+//   ?track=elbow    start in the elbow + hand mapping (default hand delta; the phone app's choice overrides it)
 
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
@@ -19,6 +20,7 @@ import {
   type JointsMsg,
   type Quat,
   type StatusMsg,
+  type TrackMode,
 } from "@arm-mirror/protocol";
 import { ArmIK, loadArm, type IKResult, type Vec3 } from "@arm-mirror/kinematics";
 import { OneEuroFilter, OneEuroQuatFilter } from "@arm-mirror/filters";
@@ -26,6 +28,7 @@ import urdfText from "../../../hardware/urdf/arm.urdf?raw";
 import { Clutch } from "./clutch";
 import { DebugArm } from "./debug-arm";
 import { Deadman } from "./deadman";
+import { ElbowMirror } from "./elbow-mirror";
 import { formatHead, formatJoints, Hud } from "./hud";
 import { ImuClient } from "./imu";
 import { OperatorLink, type LinkState } from "./link";
@@ -112,6 +115,10 @@ async function main(): Promise<void> {
   // ── State ────────────────────────────────────────────────────────────────
   const deadman = new Deadman();
   const clutch = new Clutch();
+  const elbowMirror = new ElbowMirror(model);
+  let track: TrackMode = params.get("track") === "elbow" ? "elbow" : "hand";
+  /** Mapping anchored at the last engage; a different `track` holds the arm until the next pinch. */
+  let anchored: TrackMode = track;
   let lastIK: IKResult | null = null;
   const posFilter = [0, 1, 2].map(() => new OneEuroFilter());
   const quatFilter = new OneEuroQuatFilter();
@@ -132,6 +139,7 @@ async function main(): Promise<void> {
       if (msg.t === "status") lastStatus = msg;
       else if (msg.t === "camOrient") camOrient = msg;
       else if (msg.t === "debug") debugArm.object.visible = msg.on;
+      else if (msg.t === "track") track = msg.mode;
     };
   }
   const imuUrl = params.get("imu");
@@ -164,14 +172,18 @@ async function main(): Promise<void> {
         quatFilter.reset();
         lastIK = null;
         // The deadman only engages with a hand and head in view. Anchor on the arm's current tool pose.
-        clutch.engage(s.hand!, s.head!, ik.forward(ik.deg));
+        anchored = track;
+        if (track === "elbow") elbowMirror.engage(s.head!, ik.forward(ik.deg));
+        else clutch.engage(s.hand!, s.head!, ik.forward(ik.deg));
       }
 
       if (event === "release") lastIK = null;
 
-      const target = deadman.engaged && s.hand ? clutch.target(s.hand) : null;
+      const t = timeMs / 1000;
+      const target = !deadman.engaged || !s.hand || anchored !== track ? null
+        : track === "hand" ? clutch.target(s.hand)
+        : s.elbow ? elbowMirror.target(s.hand, s.elbow, t) : null;
       if (target) {
-        const t = timeMs / 1000;
         const p = target.p.map((x, i) => posFilter[i].filter(x, t)) as Vec3;
         const q: Quat = quatFilter.filter(target.q, t);
         lastIK = ik.solve(p, q);
@@ -180,6 +192,9 @@ async function main(): Promise<void> {
           ? "jump too large: slow down, or release and re-pinch"
           : lastIK.reachable ? "" : "out of reach (clamped)";
         // TODO(stretch): when s.hand is null, feed an IMU-derived hand pose (imu.latest()) to the same clutch.
+      } else if (deadman.engaged) {
+        // Hold the last good pose (safety invariant 5).
+        hint = anchored !== track ? "tracking mode changed: release and re-pinch" : "elbow not tracked: holding";
       } else {
         hint = deadman.state === "arming" ? "hold pinch…" : "pinch (palm away) to engage";
       }
@@ -195,7 +210,7 @@ async function main(): Promise<void> {
 
     const lines = [
       ...formatHead(headQ),
-      `link: ${linkState}   deadman: ${deadman.state}   arm: ${lastStatus?.state ?? "?"}`,
+      `link: ${linkState}   deadman: ${deadman.state}   arm: ${lastStatus?.state ?? "?"}   track: ${track}`,
       ...formatJoints(commanded, lastStatus?.deg ?? null, model.limits, lastIK),
       imu ? `imu: ${imu.latest() ? "live" : "stale"}` : "",
       hint,

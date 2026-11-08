@@ -94,6 +94,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.armmirror.robot.RobotApp
 import com.armmirror.robot.arm.ArmLinkState
 import com.armmirror.robot.protocol.Status
+import com.armmirror.robot.protocol.TRACK_MODES
 import com.armmirror.robot.rtc.CameraInfo
 import com.armmirror.robot.rtc.pickWideCamera
 import org.webrtc.VideoFrame
@@ -326,12 +327,17 @@ private fun ArmSheet(
     }
 }
 
+/** `selected` non-null makes it one radio option of a selectableGroup (TalkBack announces the choice). */
 @Composable
-private fun CzButton(label: String, primary: Boolean, onClick: () -> Unit) {
+private fun CzButton(label: String, primary: Boolean, selected: Boolean? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(4.dp)
     Box(
         Modifier.heightIn(min = 40.dp).clip(shape).border(1.dp, if (primary) Cz.Accent else Cz.Divider, shape)
-            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 17.dp, vertical = 9.dp),
+            .then(
+                if (selected == null) Modifier.clickable(role = Role.Button, onClick = onClick)
+                else Modifier.selectable(selected, role = Role.RadioButton, onClick = onClick),
+            )
+            .padding(horizontal = 17.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         // Primary label in accent700, not accent: accent on the sheet is ~3:1, under 4.5:1 for 14 sp text.
@@ -391,6 +397,14 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
             }
             SwitchRow("Mock MCU", robot.mock.value, robot::setMock)
             SwitchRow("Debug arm model in VR", robot.debug.value, robot::setDebug)
+            // Operator hand mapping, for comparing them. Takes effect at the operator's next pinch.
+            Text("Hand tracking", color = Cz.N700)
+            FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TRACK_MODES.forEach { m ->
+                    val on = robot.track.value == m
+                    CzButton(if (m == "elbow") "Elbow + hand" else "Hand delta", primary = on, selected = on) { robot.setTrack(m) }
+                }
+            }
         }
     }
 }

@@ -77,6 +77,11 @@ fun statusJson(s: Status): String =
 
 fun debugJson(on: Boolean): String = JSONObject().put("t", "debug").put("on", on).toString()
 
+/** Operator hand-tracking mapping: "hand" = hand motion since engage, "elbow" = elbow→hand vector mirrored. */
+val TRACK_MODES = listOf("hand", "elbow")
+
+fun trackJson(mode: String): String = JSONObject().put("t", "track").put("mode", mode).toString()
+
 /** `q` is `[x, y, z, w]`: device frame relative to Earth ENU, same as the web AbsoluteOrientationSensor. */
 fun camOrientJson(q: FloatArray, ts: Long): String =
     JSONObject().put("t", "camOrient").put("q", JSONArray().apply { q.forEach { put(it.toDouble()) } }).put("ts", ts).toString()
