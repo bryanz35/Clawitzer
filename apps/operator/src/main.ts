@@ -6,6 +6,7 @@
 //   ?imu=ws://…     IMU wearable fallback (stretch)
 //   ?signal=ws://…  signaling URL override (default ws://<page host>:8080/signal)
 //   ?hand=left      track the left hand (default right)
+//   ?fov=80         horizontal degrees the whole camera frame spans in the headset
 
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import {
@@ -97,9 +98,10 @@ async function main(): Promise<void> {
   const model = loadArm(urdfText);
   const ik = new ArmIK(model);
 
-  const video = new VideoPanel();
-  video.mesh.position.set(0, 1.5, -2);
-  scene.add(video.mesh);
+  const fov = Number(params.get("fov"));
+  const video = new VideoPanel(fov > 0 && fov < 180 ? { displayHFovDeg: fov } : {});
+  video.object.position.set(0, 1.6, 0); // eye height until the first XR frame
+  scene.add(video.object);
 
   // ── State ────────────────────────────────────────────────────────────────
   const deadman = new Deadman();
@@ -168,7 +170,7 @@ async function main(): Promise<void> {
       }
 
       send(deadman.engaged, timeMs);
-      video.update(s.head?.orientation ?? null, camOrient?.q ?? null);
+      video.update(s.head, camOrient?.q ?? null);
     } else if (MOCK_ROBOT) {
       send(false, timeMs);
     }
