@@ -32,7 +32,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 | Path | What | Key tech |
 |---|---|---|
 | `apps/operator` | Quest WebXR page. **IK runs here.** | Vite, TypeScript, Three.js, raw WebXR hand (`hand-tracking`) + body (`body-tracking`, `XRFrame.body`) APIs, closed-chain-ik |
-| `apps/robot-android` | Native phone app (Gradle, not an npm workspace). Embedded server, WebRTC answerer, USB serial, orientation | Kotlin, Jetpack Compose, Ktor (CIO + websockets), stream-webrtc-android (libwebrtc), usb-serial-for-android, `SensorManager` rotation vector |
+| `apps/robot-android` | Native phone app (Gradle, not an npm workspace). Embedded server, WebRTC answerer, USB serial, orientation | Kotlin, Jetpack Compose, Ktor (CIO + websockets), stream-webrtc-android (libwebrtc), usb-serial-for-android, `SensorManager` game rotation vector (no magnetometer) |
 | `packages/protocol` | ALL message types + serial encode/decode + CRC | TS, shared by every app |
 | `packages/kinematics` | URDF loading, IK wrapper, limit clamping | TS + vitest |
 | `packages/filters` | One Euro filter | TS + vitest |

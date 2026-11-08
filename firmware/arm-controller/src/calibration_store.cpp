@@ -12,12 +12,14 @@ namespace actuators {
 namespace {
 
 constexpr uint32_t kRecordMagic = 0x41435452;  // ACTR
-// v3 adds the marked-home encoder angle used for guarded auto-reference. Older blobs
-// fail the size check, so they are rejected rather than misinterpreted.
+// v3 added a marked-home slot, now unused (see kHomeKey). Older blobs fail the size check,
+// so they are rejected rather than misinterpreted.
 constexpr uint32_t kRecordVersion = 3;
 constexpr const char* kNamespace = "arm_cal";
 // Leave the old full-Config "actuators" blob untouched for rollback firmware.
 constexpr const char* kKey = "mapping_v2";
+// Marked-home shaft angle. Separate from the mapping so a reference never writes the mapping.
+constexpr const char* kHomeKey = "home_raw";
 
 struct Record {
   uint32_t magic;
@@ -95,6 +97,22 @@ bool NvsCalibrationStore::save(const Config& config) {
   if (result != ESP_OK) return fail("Write calibration", result);
   result = nvs_commit(static_cast<nvs_handle_t>(handle_));
   if (result != ESP_OK) return fail("Commit calibration", result);
+  return true;
+}
+
+int32_t NvsCalibrationStore::loadHomeRaw() {
+  int32_t raw = -1;
+  if (!ready_ || nvs_get_i32(static_cast<nvs_handle_t>(handle_), kHomeKey, &raw) != ESP_OK) return -1;
+  return raw;
+}
+
+bool NvsCalibrationStore::saveHomeRaw(int32_t raw) {
+  error_[0] = '\0';
+  if (!ready_) return fail("NVS not initialized", ESP_ERR_INVALID_STATE);
+  esp_err_t result = nvs_set_i32(static_cast<nvs_handle_t>(handle_), kHomeKey, raw);
+  if (result != ESP_OK) return fail("Write home angle", result);
+  result = nvs_commit(static_cast<nvs_handle_t>(handle_));
+  if (result != ESP_OK) return fail("Commit home angle", result);
   return true;
 }
 

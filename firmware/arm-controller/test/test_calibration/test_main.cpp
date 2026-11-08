@@ -72,8 +72,11 @@ class MemoryStore final : public Store {
   Config saved = testsupport::calibrated();
   bool present = true;
   int saves = 0;
+  int32_t homeRaw = -1;
   bool load(Config& config) override { if (!present) return false; config = saved; return true; }
   bool save(const Config& config) override { saved = config; present = true; ++saves; return true; }
+  int32_t loadHomeRaw() override { return homeRaw; }
+  bool saveHomeRaw(int32_t raw) override { homeRaw = raw; return true; }
 };
 
 void setUp() {}
@@ -112,11 +115,9 @@ static SerialController::Result cameraCommand(SerialController& serial, uint16_t
 }
 
 void test_guarded_auto_reference_needs_the_recorded_home_angle() {
-  Config recorded = boardConfig();
-  recorded.homeRaw = 1234;
-
   Arm matchedArm; BenchIO matchedIO; MemoryStore matchedStore;
-  matchedStore.saved = recorded;
+  matchedStore.saved = boardConfig();
+  matchedStore.homeRaw = 1234;
   matchedIO.raw = 1234;
   CalibrationSession matched(matchedArm, matchedIO, matchedStore);
   matched.begin(0);
@@ -126,7 +127,8 @@ void test_guarded_auto_reference_needs_the_recorded_home_angle() {
 
   // Powered down, then stopped somewhere else: the guard must refuse to assume home.
   Arm movedArm; BenchIO movedIO; MemoryStore movedStore;
-  movedStore.saved = recorded;
+  movedStore.saved = boardConfig();
+  movedStore.homeRaw = 1234;
   movedIO.raw = static_cast<uint16_t>(1234 + 2000);
   CalibrationSession moved(movedArm, movedIO, movedStore);
   moved.begin(0);
@@ -142,7 +144,10 @@ void test_reference_records_home_angle_for_the_next_boot() {
   TEST_ASSERT_FALSE(session.normalReady());
   TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
   TEST_ASSERT_TRUE(session.normalReady());
-  TEST_ASSERT_EQUAL_INT(4321, store.saved.homeRaw);
+  TEST_ASSERT_EQUAL_INT(4321, store.homeRaw);
+  // The mapping record stays untouched, so later firmware defaults still apply.
+  TEST_ASSERT_FALSE(store.present);
+  TEST_ASSERT_EQUAL_INT(0, store.saves);
 
   // Same shaft angle at the next boot is enough: no console or panel needed.
   Arm rebootArm; BenchIO rebootIO;

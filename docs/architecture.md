@@ -37,7 +37,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - `rtc/RobotPeer.kt` is the WebRTC answerer (libwebrtc via stream-webrtc-android). It sends the Camera2 track plus `camOrient`, `status`, `debug` and `track` on the `control` channel. No STUN: LAN host candidates only.
 - `arm/Relay.kt` drops stale `joints` by seq and forwards only `engaged` ones. `arm/UsbArmLink.kt` writes them to the MCU over USB host (usb-serial-for-android). `arm/SerialSession` handshakes on every (re)connect by waiting for a status line and continuing from its seq. A "Mock MCU" switch replaces USB with a fake 10 Hz status.
 - NodeMCU-32S boards expose UART0 through a CP210x/CH340-style bridge, not CDC-ACM. usb-serial-for-android's default prober supports those chips, but `res/xml/device_filter.xml` only matches the Espressif VID, so attaching the board won't auto-launch the app. Untested on the real board. A phone-side deliberate marked-home reference action is also required after reconnect resets; the current reference workflow is the laptop CLI.
-- `sensors/Orientation.kt` sends `TYPE_ROTATION_VECTOR` (device → ENU, the same frame Chrome's AbsoluteOrientationSensor used) at ~60 Hz.
+- `sensors/Orientation.kt` sends `TYPE_GAME_ROTATION_VECTOR` (device → z-up world, arbitrary heading; no magnetometer because the phone rides a servo) at ~60 Hz.
 - `FLAG_KEEP_SCREEN_ON` keeps the app awake in the foreground.
 - `protocol/` is a Kotlin mirror of `packages/protocol`, which stays canonical.
 

@@ -50,6 +50,9 @@ const PAN_SIGN = 1;
 // Pan slew limit; firmware writes P lines straight to the servo. The sensor-driven crop absorbs the lag.
 // TODO(open-item): tune on the stand with the phone mounted.
 const PAN_MAX_DEG_S = 240;
+// The video heading is calibrated assuming the stand points where the head does. The stand starts
+// wherever the last session left it, so keep the panel head-locked until it has caught up.
+const PAN_SETTLE_MS = 1000;
 // The arm accepts commands only once homed; engaging against HOMING/ESTOP/no status would anchor IK to a guess.
 const ENGAGEABLE: readonly ArmState[] = ["IDLE", "ACTIVE", "WATCHDOG"];
 
@@ -143,6 +146,8 @@ async function main(): Promise<void> {
   let linkState: LinkState | "mock" = MOCK_ROBOT ? "mock" : "signaling-down";
   let seq = 0;
   let panSeq = 0;
+  /** When this XR session's first pan command went out; null until then. */
+  let panSinceMs: number | null = null;
   let panDeg = 90; // firmware's boot pan
   let lastSendMs = 0;
   let hint = "";
@@ -179,7 +184,7 @@ async function main(): Promise<void> {
         panDeg = panCommandDeg(yawDeg, panDeg, PAN_MAX_DEG_S / CMD_HZ, PAN_SIGN);
         panSeq = nextSeq(panSeq);
         const pan: PanMsg = { t: "pan", seq: panSeq, deg: panDeg };
-        link.send(pan);
+        if (link.send(pan)) panSinceMs ??= nowMs;
       }
     } else {
       lastStatus = { t: "status", seq, state: engaged ? "ACTIVE" : "IDLE", deg: commanded }; // mockRobot echo
@@ -236,7 +241,8 @@ async function main(): Promise<void> {
       }
 
       send(deadman.engaged, timeMs);
-      video.update(s.head, camOrient?.q ?? null);
+      const panSettled = panSinceMs !== null && timeMs - panSinceMs >= PAN_SETTLE_MS;
+      video.update(s.head, panSettled ? camOrient?.q ?? null : null);
     } else if (MOCK_ROBOT) {
       send(false, timeMs);
     }
@@ -274,6 +280,7 @@ async function main(): Promise<void> {
       deadman.release();
       lastIK = null;
       video.resetCalibration();
+      panSinceMs = null;
     });
     enterButton.textContent = "In VR";
   };

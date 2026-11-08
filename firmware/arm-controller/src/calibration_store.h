@@ -16,6 +16,8 @@ class NvsCalibrationStore final : public Store {
   bool begin();
   bool load(Config& config) override;
   bool save(const Config& config) override;
+  int32_t loadHomeRaw() override;
+  bool saveHomeRaw(int32_t raw) override;
   const char* error() const { return error_; }
 
  private:

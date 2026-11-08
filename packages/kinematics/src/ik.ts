@@ -20,6 +20,11 @@ export interface ArmIKOptions {
   rotationTolerance: number;
   /** Solver iterations per solve() call. */
   maxIterations: number;
+  /**
+   * Differential wrist: |j3| + |j4| may not exceed this (degrees). The firmware projects every
+   * pose onto it (Arm::clampWrist; 90° with the board_config.h wrist mix), so the IK does the same.
+   */
+  wristSumMaxDeg: number;
 }
 
 export const DEFAULT_IK_OPTIONS: ArmIKOptions = {
@@ -28,12 +33,16 @@ export const DEFAULT_IK_OPTIONS: ArmIKOptions = {
   positionTolerance: 0.005,
   rotationTolerance: 2 * RAD,
   maxIterations: 20,
+  wristSumMaxDeg: 90,
 };
 
 export interface IKResult {
   /** Joint angles to command, degrees, j1…j5. Always within URDF limits. */
   deg: JointDeg;
-  /** The solver hit the target within tolerance. False → `deg` is the nearest pose it found (or the held pose). */
+  /**
+   * The solver hit the target within tolerance. False → `deg` is the nearest pose it found, the held
+   * pose, or a wrist pose projected onto the differential limit.
+   */
   reachable: boolean;
   /** At least one joint is pinned at a URDF limit. */
   clamped: boolean;
@@ -51,6 +60,9 @@ export interface Pose {
 // closed-chain-ik's DOF is an ambient const enum, which isolatedModules can't read. Same values.
 const ROT_DOF: Record<FreeAxis, DOF> = { x: 3, y: 4, z: 5 };
 const AXES: FreeAxis[] = ["x", "y", "z"];
+// Protocol joint order (JointDeg): j3 wrist pitch, j4 wrist roll.
+const WRIST_PITCH = 2;
+const WRIST_ROLL = 3;
 
 interface IKJoint {
   joint: Joint;
@@ -187,6 +199,9 @@ export class ArmIK {
     for (const j of this.joints) {
       solution[j.index] = this.clampJoint(j.index, j.sign * Number(j.joint.getDoFValue(j.dof)));
     }
+    const wristClamped = this.clampWrist(solution);
+    // Measure the error at the pose the arm will actually take.
+    this.applyToSolver(solution);
 
     const pos: Vec3 = [0, 0, 0];
     const quat: Quat = [0, 0, 0, 1];
@@ -194,7 +209,7 @@ export class ArmIK {
     this.effector.getWorldQuaternion(quat);
     const positionError = Math.hypot(pos[0] - targetPos[0], pos[1] - targetPos[1], pos[2] - targetPos[2]);
     const rotationError = quatAngle(quat, targetQuat);
-    const reachable =
+    const reachable = !wristClamped &&
       positionError < this.options.positionTolerance && rotationError < this.options.rotationTolerance;
 
     const maxStep = Math.max(...solution.map((r, i) => Math.abs(r - this.current[i]))) * DEG;
@@ -211,6 +226,16 @@ export class ArmIK {
     });
 
     return { deg: this.deg, reachable: reachable && !stepRejected, clamped, stepRejected, positionError, rotationError };
+  }
+
+  /** Radial projection onto |j3| + |j4| ≤ wristSumMaxDeg, the same as the firmware's. True if it moved. */
+  private clampWrist(urdfRad: number[]): boolean {
+    const sum = Math.abs(urdfRad[WRIST_PITCH]) + Math.abs(urdfRad[WRIST_ROLL]);
+    const max = this.options.wristSumMaxDeg * RAD;
+    if (!(sum > max)) return false;
+    urdfRad[WRIST_PITCH] *= max / sum;
+    urdfRad[WRIST_ROLL] *= max / sum;
+    return true;
   }
 
   private clampJoint(i: number, urdfRad: number): number {

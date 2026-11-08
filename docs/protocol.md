@@ -61,7 +61,7 @@ JSON with a `t` discriminator. The channel is unordered with `maxRetransmits: 0`
 |---|---|---|
 | `joints` | Quest → phone | `seq`, `deg[5]`, `engaged`. The phone forwards to serial only when `engaged`. |
 | `pan` | Quest → phone | `seq`, `deg` (camera servo `[0,180]`, 90 = straight ahead, from head yaw). Not deadman-gated; the phone forwards it as a serial `P` line. |
-| `camOrient` | phone → Quest | `q` (phone orientation, `[x,y,z,w]`, device frame relative to Earth ENU), `ts` (sender epoch ms; clocks are not synced) |
+| `camOrient` | phone → Quest | `q` (phone orientation, `[x,y,z,w]`, device frame relative to a z-up world frame, arbitrary heading, no compass), `ts` (sender epoch ms; clocks are not synced) |
 | `status` | phone → Quest | `seq`, `state`, `deg[5]`: the serial status line as JSON |
 | `debug` | phone → Quest | `on`: the app's debug switch (show the in-VR arm model). Resent every second, since the channel drops. |
 | `track` | phone → Quest | `mode`: `"hand"` (hand motion since engage) or `"elbow"` (elbow→hand vector mirrored). The app's hand-tracking choice; applies at the next pinch. Resent every second. |

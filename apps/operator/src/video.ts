@@ -52,8 +52,8 @@ export function panCommandDeg(yawDeg: number, lastDeg: number, maxStepDeg: numbe
 }
 
 /**
- * Yaw (CCW from above) and pitch of the phone's rear camera. AbsoluteOrientationSensor reports
- * the device frame relative to Earth ENU (x east, y north, z up); the rear camera looks along −Z.
+ * Yaw (CCW from above) and pitch of the phone's rear camera. camOrient is the device frame
+ * relative to a z-up world frame with an arbitrary heading (no compass); the rear camera looks along −Z.
  * Independent of roll about the lens axis, so the landscape mount needs no change here.
  */
 export function cameraYawPitch(q: Quat): [number, number] {
@@ -106,7 +106,7 @@ export class VideoPanel {
   }
 
   /**
-   * Re-zero the heading offset between the XR frame and Earth north. Call while the operator
+   * Re-zero the heading offset between the XR frame and the phone's world frame. Call while the operator
    * looks at what the camera is pointing at (e.g. when the stream starts, or a "recenter" input).
    */
   calibrate(head: Quat, cam: Quat): void {

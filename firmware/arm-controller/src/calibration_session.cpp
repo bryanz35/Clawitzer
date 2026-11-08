@@ -57,6 +57,7 @@ void CalibrationSession::begin(uint32_t nowMs) {
     actuators::applyBoardHardware(loaded, board_);
     config_ = loaded;
   }
+  config_.homeRaw = store_.loadHomeRaw();
   draft_ = config_;
   char reason[128];
   validConfig_ = actuators::validate(config_, reason, sizeof reason);
@@ -339,8 +340,9 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
     if (*io_.error()) { fail("stepper_enable", nowMs); return error(fields, capacity, io_.error()); }
     // Remember the shaft angle of this marked home so a later boot can prove it is still
     // there. Best effort: a failed write only means the next boot needs a manual reference.
+    // Only the angle is written: saving the mapping here would freeze compiled defaults in NVS.
     config_.homeRaw = static_cast<int32_t>(encoder_.raw());
-    (void)store_.save(config_);
+    (void)store_.saveHomeRaw(config_.homeRaw);
     return true;
   }
   if (!calibrating_) return error(fields, capacity, "bench_mode_required");

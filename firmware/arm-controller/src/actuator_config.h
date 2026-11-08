@@ -40,7 +40,7 @@ struct Config {
   float currentMa = 0, senseResistorOhm = 0;
   float followingErrorDeg = 0;
   uint32_t uartAddress = 0;
-  // Encoder counts at the last marked-home reference (-1 = never referenced since flash).
+  // Encoder counts at the last marked-home reference (-1 = none). Persisted by Store::saveHomeRaw.
   int32_t homeRaw = -1;
 };
 
@@ -52,8 +52,8 @@ struct CalibrationValues {
   float motorStepsPerRev, gearRatio, currentMa, senseResistorOhm, followingErrorDeg;
   uint32_t microsteps, uartAddress;
   int32_t motorDirection, encoderDirection;
-  // Motor-shaft encoder angle sampled at the last marked-home reference, or -1.
-  // Only this exact reading can be trusted as "the elbow is at home" at boot.
+  // Legacy slot, kept so existing v3 records still load. Ignored at boot: the live
+  // marked-home angle has its own key (Store::loadHomeRaw).
   int32_t homeRaw;
 };
 CalibrationValues calibrationValues(const Config& config);
@@ -103,6 +103,10 @@ class Store {
   virtual ~Store() = default;
   virtual bool load(Config& config) = 0;
   virtual bool save(const Config& config) = 0;
+  // Marked-home motor-shaft angle, -1 when none. Kept apart from the mapping record so a
+  // reference never freezes compiled defaults into NVS, where they would override later firmware.
+  virtual int32_t loadHomeRaw() = 0;
+  virtual bool saveHomeRaw(int32_t raw) = 0;
 };
 
 }  // namespace actuators

@@ -183,11 +183,11 @@ class RobotApp(private val ctx: Application) {
                     roll.floatValue = r
                     if (orient.value != "live") {
                         orient.value = "live"
-                        log("orientation: rotation vector live")
+                        log("orientation: game rotation vector live")
                     }
                 }
             }
-            if (stopOrientation == null) orient.value = "rotation vector sensor missing"
+            if (stopOrientation == null) orient.value = "game rotation vector sensor missing"
         }
     }
 

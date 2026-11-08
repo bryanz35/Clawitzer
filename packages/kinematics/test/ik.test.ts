@@ -86,6 +86,20 @@ describe("ArmIK", () => {
     }
   });
 
+  it("projects the wrist onto |j3| + |j4| <= 90 like the firmware, and reports it unreachable", () => {
+    const ik = new ArmIK(model, { maxStepDeg: MAX_STEP_FOR_TESTS });
+    const inside = ik.forward([0, -20, 40, 40, 0]);
+    ik.setCurrent([0, -20, 39, 39, 0]);
+    let r = ik.solve(inside.position, inside.quaternion);
+    for (let i = 0; i < 20 && !r.reachable; i++) r = ik.solve(inside.position, inside.quaternion);
+    expect(r.reachable).toBe(true);
+
+    const outside = ik.forward([0, -20, 60, 60, 0]);
+    for (let i = 0; i < 20; i++) r = ik.solve(outside.position, outside.quaternion);
+    expect(Math.abs(r.deg[2]) + Math.abs(r.deg[3])).toBeLessThanOrEqual(90 + 1e-9);
+    expect(r.reachable).toBe(false);
+  });
+
   it("forward() does not disturb solver state", () => {
     const ik = new ArmIK(model);
     ik.setCurrent([10, 0, 0, 0, 0]);
