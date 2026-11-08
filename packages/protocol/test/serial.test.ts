@@ -6,6 +6,7 @@ import {
   encodeJoints,
   encodeStatus,
   isJointsMsg,
+  isPanMsg,
   nextSeq,
   parseCameraCommand,
   parseCameraStatus,
@@ -88,6 +89,9 @@ describe("status lines", () => {
 
 describe("camera camera-servo lines", () => {
   it("round-trips the independent 0–180° command and status", () => {
+    // Shared vectors: keep in sync with apps/robot-android/.../protocol/SerialTest.kt.
+    expect(encodeCameraCommand(7, 90.5)).toBe("P,7,90.5*AB\n");
+    expect(encodeCameraStatus({ seq: 7, deg: 90.5, active: true })).toBe("V,7,90.5,1*4A\n");
     expect(parseCameraCommand(encodeCameraCommand(9, 0))).toEqual({ seq: 9, deg: 0 });
     expect(parseCameraCommand(encodeCameraCommand(9, 180))).toEqual({ seq: 9, deg: 180 });
     const status = { seq: 9, deg: 123.4, active: true } as const;
@@ -128,5 +132,12 @@ describe("message guards", () => {
     expect(isJointsMsg({ t: "joints", seq: 1, deg: [0, 0, 0, 0], engaged: true })).toBe(false);
     expect(isJointsMsg({ t: "joints", seq: 1, deg: [0, 0, 0, 0, null], engaged: true })).toBe(false);
     expect(isJointsMsg({ t: "joints", seq: 1, deg: [0, 0, 0, 0, 0] })).toBe(false);
+  });
+
+  it("validates pan messages against the camera servo range", () => {
+    expect(isPanMsg({ t: "pan", seq: 3, deg: 90 })).toBe(true);
+    expect(isPanMsg({ t: "pan", seq: 3, deg: 180.5 })).toBe(false);
+    expect(isPanMsg({ t: "pan", seq: 3, deg: -1 })).toBe(false);
+    expect(isPanMsg({ t: "pan", seq: -1, deg: 90 })).toBe(false);
   });
 });

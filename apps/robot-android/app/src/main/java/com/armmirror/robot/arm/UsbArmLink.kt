@@ -1,4 +1,5 @@
-// Phone → MCU serial link over USB host (usb-serial-for-android, CDC-ACM for the ESP32-S3).
+// Phone → MCU serial link over USB host (usb-serial-for-android). The NodeMCU-32S has no native USB:
+// its onboard CP210x/CH340 bridge is found by the default prober (VIDs also in res/xml/device_filter.xml).
 // Line handling and the seq handshake live in SerialSession.
 package com.armmirror.robot.arm
 
@@ -12,7 +13,6 @@ import android.hardware.usb.UsbManager
 import androidx.core.content.ContextCompat
 import com.armmirror.robot.protocol.SERIAL_BAUD
 import com.armmirror.robot.protocol.Status
-import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.SerialTimeoutException
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -20,7 +20,6 @@ import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import java.io.IOException
 
-private const val ESPRESSIF_VID = 0x303a
 private const val ACTION_USB_PERMISSION = "com.armmirror.robot.USB_PERMISSION"
 
 class UsbArmLink(private val ctx: Context) : ArmLink {
@@ -55,7 +54,6 @@ class UsbArmLink(private val ctx: Context) : ArmLink {
 
     private fun findDriver(): UsbSerialDriver? =
         UsbSerialProber.getDefaultProber().findAllDrivers(usb).firstOrNull()
-            ?: usb.deviceList.values.firstOrNull { it.vendorId == ESPRESSIF_VID }?.let(::CdcAcmSerialDriver)
 
     /** Safe to call repeatedly (button, USB attach intent, permission grant). */
     @Synchronized override fun connect() {
@@ -99,6 +97,15 @@ class UsbArmLink(private val ctx: Context) : ArmLink {
 
     override fun sendJoints(deg: List<Double>) {
         if (state == ArmLinkState.READY) session?.sendJoints(deg)
+    }
+
+    override fun sendCamera(deg: Double) {
+        if (state == ArmLinkState.READY) session?.sendCamera(deg)
+    }
+
+    override fun reference(): String? {
+        val s = session.takeIf { state == ArmLinkState.READY } ?: return "arm link not ready"
+        return s.reference()
     }
 
     private fun write(line: String) {

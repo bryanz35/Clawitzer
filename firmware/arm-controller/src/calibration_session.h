@@ -22,6 +22,8 @@ class CalibrationSession {
   bool cameraActive() const { return io_.cameraActive(); }
   bool cameraStatusPending() const { return cameraStatusPending_; }
   void consumeCameraStatus() { cameraStatusPending_ = false; }
+  /** Periodic V heartbeat, so a reconnecting host learns the camera seq without moving it. */
+  void requestCameraStatus() { cameraStatusPending_ = true; }
   bool normalReady() const {
     return !calibrating_ && validConfig_ && referenced_ &&
            preparedMask_ == actuators::kAllOutputs && !faulted_;

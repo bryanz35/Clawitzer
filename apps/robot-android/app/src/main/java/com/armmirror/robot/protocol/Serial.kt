@@ -5,6 +5,8 @@
 // Line formats (ASCII, '\n' terminated, 115200 baud):
 //   command  J,<seq>,<j1>,…,<j5>*<crc8>
 //   status   S,<seq>,<state>,<j1>,…,<j5>*<crc8>
+//   camera   P,<seq>,<deg>*<crc8>          (pan servo 0–180°, independent of arm joints)
+//   camera   V,<seq>,<deg>,<active>*<crc8> (status, active 0/1)
 package com.armmirror.robot.protocol
 
 import java.math.BigDecimal
@@ -15,8 +17,13 @@ const val SERIAL_BAUD = 115200
 const val STATUS_HZ = 10
 const val WATCHDOG_MS = 200L
 const val SEQ_MODULUS = 0x10000
+const val CAMERA_MIN_DEG = 0.0
+const val CAMERA_MAX_DEG = 180.0
 
 val ARM_STATES = setOf("HOMING", "IDLE", "ACTIVE", "WATCHDOG", "ESTOP")
+
+/** Parsed `V` line: the last camera seq the MCU accepted and its current pan angle. */
+data class CameraStatus(val seq: Int, val deg: Double, val active: Boolean)
 
 /** Parsed `S` line. `seq` is the last command seq the MCU accepted. */
 data class Status(val seq: Int, val state: String, val deg: List<Double>)
@@ -48,12 +55,20 @@ private fun formatDeg(deg: List<Double>): String {
     }
 }
 
-private fun frame(letter: Char, payload: String) = "$letter$payload*${crc8(payload).toString(16).uppercase().padStart(2, '0')}\n"
+internal fun frame(letter: Char, payload: String) = "$letter$payload*${crc8(payload).toString(16).uppercase().padStart(2, '0')}\n"
 
 /** Encodes a joint command line. Throws on invalid input (a programming error, not line noise). */
 fun encodeJoints(seq: Int, deg: List<Double>): String {
     require(seq in 0 until SEQ_MODULUS) { "seq out of range: $seq" }
     return frame('J', ",$seq,${formatDeg(deg)}")
+}
+
+/** Encodes a pan-servo `P` line. Throws on out-of-range input (the relay validated it already). */
+fun encodeCamera(seq: Int, deg: Double): String {
+    require(seq in 0 until SEQ_MODULUS) { "seq out of range: $seq" }
+    require(deg.isFinite() && deg in CAMERA_MIN_DEG..CAMERA_MAX_DEG) { "camera angle out of range: $deg" }
+    val text = if (kotlin.math.abs(deg) < 0.05) "0.0" else BigDecimal(deg).setScale(1, RoundingMode.HALF_UP).toPlainString()
+    return frame('P', ",$seq,$text")
 }
 
 /** Encodes a status line. Used by the mock; the real sender is the firmware. */
@@ -66,7 +81,7 @@ private val HEX2 = Regex("^[0-9A-Fa-f]{2}$")
 private val SEQ_FIELD = Regex("^\\d{1,5}$")
 private val DEG_FIELD = Regex("^-?\\d+(\\.\\d+)?$")
 
-private fun unframe(line: String, letter: Char): List<String>? {
+internal fun unframe(line: String, letter: Char): List<String>? {
     val s = line.removeSuffix("\n").removeSuffix("\r")
     if (!s.startsWith(letter)) return null
     val star = s.lastIndexOf('*')
@@ -101,4 +116,14 @@ fun parseStatus(line: String): Status? {
     val state = f[1].takeIf { it in ARM_STATES } ?: return null
     val deg = parseDegFields(f.drop(2)) ?: return null
     return Status(seq, state, deg)
+}
+
+/** Parses a `V` line. Null on bad CRC or a malformed line. */
+fun parseCameraStatus(line: String): CameraStatus? {
+    val f = unframe(line, 'V') ?: return null
+    if (f.size != 3) return null
+    val seq = parseSeqField(f[0]) ?: return null
+    val deg = f[1].takeIf { DEG_FIELD.matches(it) }?.toDouble()?.takeIf { it in CAMERA_MIN_DEG..CAMERA_MAX_DEG } ?: return null
+    val active = when (f[2]) { "0" -> false; "1" -> true; else -> return null }
+    return CameraStatus(seq, deg, active)
 }

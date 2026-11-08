@@ -165,7 +165,11 @@ bool CalibrationSession::readEncoderSample(uint32_t nowMs) {
 
 void CalibrationSession::tick(uint32_t nowMs, float dtSec) {
   if (!preparedMask_) return;
-  if (io_.estopActive()) { fail("estop", nowMs); return; }
+  if (io_.estopActive()) {
+    // Fail once: outputs are already off, and repeating would queue a camera status every tick.
+    if (!faulted_) fail("estop", nowMs);
+    return;
+  }
   if (faulted_) return;  // Recovery always requires an explicit arm, apply or marked-home reference.
   if (preparedMask_ & actuators::kStepperOutput) {
     if (readEncoderSample(nowMs)) sampleFaults_ = 0;
@@ -448,12 +452,16 @@ bool CalibrationSession::dispatch(const calibration::Command& cmd, uint32_t nowM
   if (is(verb, "step")) {
     if (!numbers(cmd, 0, n, 1, 2147483648.0) || !integral(n[0]) || n[0] == 0) return error(fields, capacity, "step_bounds");
     if (!(armedMask_ & actuators::kStepperOutput)) return error(fields, capacity, "not_armed");
+    // Bench jogs stay bounded: one move may not exceed the generated elbow range (draft gearing).
+    const double maxSteps = static_cast<double>(actuators::stepsPerJointDegree(draft_)) *
+        (ARM_JOINT_MAX_DEG[actuators::ElbowPitch] - ARM_JOINT_MIN_DEG[actuators::ElbowPitch]);
+    if (!(fabs(n[0]) <= maxSteps)) return error(fields, capacity, "step_bounds");
     if (jogPending_ && io_.stepPosition() != jogTarget_) return error(fields, capacity, "step_busy");
     // A zero rate cancels the target on disable; the IO counter is the source of truth.
     const int32_t position = io_.stepPosition();
     if ((n[0] > 0 && position > INT32_MAX - n[0]) || (n[0] < 0 && position < INT32_MIN - n[0])) return error(fields, capacity, "step_overflow");
     const int32_t target = position + static_cast<int32_t>(n[0]);
-    io_.stepTarget(target, calibration::kStepRate);
+    io_.stepTarget(target, calibration::kFullStepRate * static_cast<float>(draft_.microsteps));
     if (*io_.error()) { fail("step_output", nowMs); return error(fields, capacity, io_.error()); }
     jogPending_ = true;
     jogTarget_ = target;

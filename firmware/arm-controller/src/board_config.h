@@ -13,8 +13,7 @@ namespace actuators {
 inline constexpr int32_t kCameraServoPin = 21;
 inline constexpr int32_t kCameraMinUs = 500;
 inline constexpr int32_t kCameraMaxUs = 2500;
-inline constexpr float kCameraMinDeg = 0.0f;
-inline constexpr float kCameraMaxDeg = 180.0f;
+// The degree range is proto::kCameraMinDeg/kCameraMaxDeg, shared with the serial parser.
 
 // NodeMCU-32S wiring and hard travel windows are code-owned, never restored from NVS.
 inline Config boardConfig() {

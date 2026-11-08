@@ -8,6 +8,9 @@ import org.json.JSONObject
 /** Quest → phone on the `control` data channel. */
 data class Joints(val seq: Int, val deg: List<Double>, val engaged: Boolean)
 
+/** Quest → phone: pan-servo target in degrees (0–180, 90 = straight ahead). Not deadman-gated. */
+data class Pan(val seq: Int, val deg: Double)
+
 sealed interface Signal {
     data class Offer(val sdp: String) : Signal
     data class Ice(val candidate: String, val sdpMid: String?, val sdpMLineIndex: Int?) : Signal
@@ -36,6 +39,15 @@ fun parseJointsMsg(text: String): Joints? {
     val deg = (0 until NUM_JOINTS).map { (arr.opt(it) as? Number)?.toDouble()?.takeIf(Double::isFinite) ?: return null }
     val engaged = o.opt("engaged") as? Boolean ?: return null
     return Joints(seq, deg, engaged)
+}
+
+/** Parses a `pan` message; null if it is anything else, malformed or out of the servo range. */
+fun parsePanMsg(text: String): Pan? {
+    val o = obj(text) ?: return null
+    if (o.opt("t") != "pan") return null
+    val seq = o.int("seq")?.takeIf { it < SEQ_MODULUS } ?: return null
+    val deg = o.num("deg")?.takeIf { it in CAMERA_MIN_DEG..CAMERA_MAX_DEG } ?: return null
+    return Pan(seq, deg)
 }
 
 /** Parses an operator → robot signaling message (offer, ice, peer); null otherwise. */

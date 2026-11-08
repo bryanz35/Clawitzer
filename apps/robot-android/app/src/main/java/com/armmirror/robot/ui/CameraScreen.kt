@@ -39,7 +39,9 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -376,6 +378,29 @@ private fun StatusPane(robot: RobotApp, arm: ArmLinkState, status: Status?, onCa
                         Spacer(Modifier.height(3.dp))
                         Text(title(s), fontSize = 10.sp, color = if (s == arm) Cz.Text else Cz.N700)
                     }
+                }
+            }
+            // The firmware ignores joint commands until a marked-home reference, after every boot/reset/e-stop.
+            if (arm == ArmLinkState.READY && status?.state == "HOMING") {
+                var confirming by remember { mutableStateOf(false) }
+                if (robot.referencing.value) Text("Referencing…", color = Cz.N700)
+                else CzButton("Reference arm (all axes on home marks)", primary = true) { confirming = true }
+                if (confirming) {
+                    AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text("Reference the arm?") },
+                        text = {
+                            Text(
+                                "Confirm that EVERY axis (base, elbow, wrist pair, gripper) is aligned to its home mark, " +
+                                    "the linkage is clear and the physical e-stop is within reach. Outputs enable and the arm " +
+                                    "will then follow the operator.",
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { confirming = false; robot.referenceArm() }) { Text("All axes on home marks") }
+                        },
+                        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+                    )
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Cz.Divider))

@@ -33,6 +33,7 @@ import org.webrtc.VideoSink
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class RobotApplication : Application() {
     lateinit var robot: RobotApp
@@ -61,6 +62,8 @@ class RobotApp(private val ctx: Application) {
     val roll = mutableFloatStateOf(0f)
     val cameras = mutableStateOf(emptyList<CameraInfo>())
     val log = mutableStateListOf<String>()
+    /** A marked-home reference request is in flight. */
+    val referencing = mutableStateOf(false)
     val operatorUrls: List<String> = lanAddresses().map { "http://$it:$HUB_PORT/operator/" }
 
     private val main = Handler(Looper.getMainLooper())
@@ -82,7 +85,7 @@ class RobotApp(private val ctx: Application) {
     @Volatile private var armLink: ArmLink = usbLink
 
     // Relay rule: joints reach serial ONLY when engaged (see Relay).
-    private val relay = Relay { armLink.sendJoints(it) }
+    private val relay = Relay(send = { armLink.sendJoints(it) }, sendPan = { armLink.sendCamera(it) })
     private var stopOrientation: (() -> Unit)? = null
 
     init {
@@ -93,6 +96,7 @@ class RobotApp(private val ctx: Application) {
         peer.onLog = ::log
         peer.onChannelOpen = relay::reset
         peer.onJoints = relay::onJoints
+        peer.onPan = relay::onPan
         hub.start()
         operatorUrls.forEach { log("operator: $it") }
         // The control channel never retransmits, so resend the switch state (also reaches a newly connected operator).
@@ -130,6 +134,18 @@ class RobotApp(private val ctx: Application) {
     }
 
     fun connectArm() = armLink.connect()
+
+    /** Call only after the user confirmed that EVERY axis sits on its home mark. */
+    fun referenceArm() {
+        if (referencing.value) return
+        referencing.value = true
+        log("arm: reference requested (user confirmed all axes on home marks)")
+        thread(name = "arm-reference", isDaemon = true) {
+            val error = armLink.reference()
+            log(if (error == null) "arm: referenced; homing" else "arm: reference failed: $error")
+            ui { referencing.value = false }
+        }
+    }
 
     /** Reset button: drop the link; Connect arm re-handshakes. */
     fun resetArm() = armLink.close()

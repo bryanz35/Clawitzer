@@ -44,7 +44,8 @@ class BenchIO final : public IO {
     if (!(configuredMask & (1u << index))) { ioFault = true; return false; }
     stopped = false; servoMask |= 1u << index; pulse[index] = value; return true;
   }
-  void stepTarget(int32_t value, float) override { target = value; }
+  float rate = 0;
+  void stepTarget(int32_t value, float stepsPerSecond) override { target = value; rate = stepsPerSecond; }
   int32_t stepPosition() const override { ++stepPositionReads; return position; }
   void zeroStepPosition() override { position = target = 0; }
   void enableStepper(bool value) override { enabled = value; stopped = !value && !servoMask; }
@@ -283,9 +284,9 @@ void test_step_jogs_cannot_overlap_and_timeout_cancels_pending_motion() {
   TEST_ASSERT_EQUAL_INT32(io.position, io.target);
 }
 
-void test_step_jogs_allow_uncapped_travel_but_reject_invalid_and_overflowing_counts() {
+void test_step_jogs_are_bounded_by_elbow_range_and_reject_invalid_and_overflowing_counts() {
   Arm arm; BenchIO io; MemoryStore store;
-  store.saved.microsteps = 4;
+  store.saved.microsteps = 4;  // 200 * 4 * 17 / 360 = 37.8 microsteps/deg; 110 deg range = 4155 microsteps.
   CalibrationSession session(arm, io, store);
   session.begin(0);
   TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
@@ -294,22 +295,23 @@ void test_step_jogs_allow_uncapped_travel_but_reject_invalid_and_overflowing_cou
   TEST_ASSERT_FALSE(command(session, 4, "step,1.5", 40, "ERR,step_bounds"));
   TEST_ASSERT_FALSE(command(session, 5, "step,2147483648", 50, "ERR,step_bounds"));
   TEST_ASSERT_FALSE(command(session, 6, "step,-2147483649", 60, "ERR,step_bounds"));
+  TEST_ASSERT_FALSE(command(session, 7, "step,4156", 70, "ERR,step_bounds"));
+  TEST_ASSERT_FALSE(command(session, 8, "step,-100000", 80, "ERR,step_bounds"));
   TEST_ASSERT_EQUAL_INT32(0, io.target);
-  TEST_ASSERT_TRUE(command(session, 7, "step,3200", 70));
-  TEST_ASSERT_EQUAL_INT32(3200, io.target);
+  TEST_ASSERT_TRUE(command(session, 9, "step,4155", 90));
+  TEST_ASSERT_EQUAL_INT32(4155, io.target);
+  // Rate is a fixed motor speed: 62.5 full steps/s at 1/4 microstepping.
+  TEST_ASSERT_EQUAL_FLOAT(250.0f, io.rate);
   io.position = io.target;
-  TEST_ASSERT_TRUE(command(session, 8, "step,-6400", 80));
-  TEST_ASSERT_EQUAL_INT32(-3200, io.target);
-  io.position = io.target;
-  TEST_ASSERT_TRUE(command(session, 9, "step,2147483647", 90));
-  TEST_ASSERT_EQUAL_INT32(2147480447, io.target);
-  io.position = io.target;
-  TEST_ASSERT_FALSE(command(session, 10, "step,4000", 100, "ERR,step_overflow"));
-  TEST_ASSERT_EQUAL_INT32(io.position, io.target);
-  TEST_ASSERT_TRUE(command(session, 11, "step,-2147483648", 110));
-  TEST_ASSERT_EQUAL_INT32(-3201, io.target);
-  io.position = io.target;
-  TEST_ASSERT_FALSE(command(session, 12, "step,-2147483648", 120, "ERR,step_overflow"));
+  TEST_ASSERT_TRUE(command(session, 10, "step,-4000", 100));
+  TEST_ASSERT_EQUAL_INT32(155, io.target);
+  // Re-arm with the counter near each int32 end: a bounded jog must still not overflow it.
+  io.position = 2147483647 - 100;
+  TEST_ASSERT_TRUE(command(session, 11, "arm,stepper", 110));
+  TEST_ASSERT_FALSE(command(session, 12, "step,4000", 120, "ERR,step_overflow"));
+  io.position = -2147483647 - 1 + 100;
+  TEST_ASSERT_TRUE(command(session, 13, "arm,stepper", 130));
+  TEST_ASSERT_FALSE(command(session, 14, "step,-4000", 140, "ERR,step_overflow"));
   TEST_ASSERT_EQUAL_INT32(io.position, io.target);
 }
 
@@ -320,19 +322,35 @@ void test_long_step_requires_keepalives_and_estop_still_disables_it() {
   session.begin(0);
   TEST_ASSERT_TRUE(command(session, 1, "enter,UNLOADED_ESTOP_READY", 10));
   TEST_ASSERT_TRUE(command(session, 2, "arm,stepper", 20));
-  TEST_ASSERT_TRUE(command(session, 3, "step,10000", 30));
+  TEST_ASSERT_TRUE(command(session, 3, "step,4000", 30));
   uint16_t seq = 4;
   for (uint32_t now = 130; now <= 5030; now += 100) {
     TEST_ASSERT_TRUE(command(session, seq++, "keep", now));
     session.tick(now, 0.01f);
     TEST_ASSERT_TRUE(io.enabled);
-    TEST_ASSERT_EQUAL_INT32(10000, io.target);
+    TEST_ASSERT_EQUAL_INT32(4000, io.target);
   }
   io.estop = true;
   session.tick(5040, 0.01f);
   TEST_ASSERT_TRUE(io.stopped);
   TEST_ASSERT_FALSE(io.enabled);
   TEST_ASSERT_EQUAL_INT32(io.position, io.target);
+}
+
+void test_held_estop_faults_once_instead_of_every_tick() {
+  Arm arm; BenchIO io; MemoryStore store;
+  CalibrationSession session(arm, io, store);
+  session.begin(0);
+  TEST_ASSERT_TRUE(command(session, 1, "reference,HOME_MARK_CONFIRMED", 10));
+  session.tick(20, 0.01f);
+  io.estop = true;
+  session.tick(30, 0.01f);
+  TEST_ASSERT_TRUE(io.stopped);
+  TEST_ASSERT_EQUAL(ArmState::Estop, arm.state());
+  session.consumeCameraStatus();
+  for (uint32_t now = 40; now <= 200; now += 10) session.tick(now, 0.01f);
+  TEST_ASSERT_FALSE(session.cameraStatusPending());  // No V line per tick while the e-stop is held.
+  TEST_ASSERT_TRUE(io.stopped);
 }
 
 void test_save_is_validated_atomic_and_gear_is_persistent_not_fixed() {
@@ -676,7 +694,8 @@ int main() {
   RUN_TEST(test_arbitrary_jog_amounts_stay_inside_the_hard_window);
   RUN_TEST(test_pose_moves_armed_channels_atomically);
   RUN_TEST(test_step_jogs_cannot_overlap_and_timeout_cancels_pending_motion);
-  RUN_TEST(test_step_jogs_allow_uncapped_travel_but_reject_invalid_and_overflowing_counts);
+  RUN_TEST(test_step_jogs_are_bounded_by_elbow_range_and_reject_invalid_and_overflowing_counts);
+  RUN_TEST(test_held_estop_faults_once_instead_of_every_tick);
   RUN_TEST(test_long_step_requires_keepalives_and_estop_still_disables_it);
   RUN_TEST(test_save_is_validated_atomic_and_gear_is_persistent_not_fixed);
   RUN_TEST(test_power_loss_requires_new_marked_reference_and_preserves_joint_sequence);

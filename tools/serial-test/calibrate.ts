@@ -7,7 +7,7 @@ import { ReadlineParser, SerialPort } from "serialport";
 import { DEG, loadArm } from "@arm-mirror/kinematics";
 import {
   CALIBRATION_ENTER_ACK, CALIBRATION_REFERENCE_ACK, CALIBRATION_KEY_ARITY,
-  CALIBRATION_STEP_RATE,
+  CALIBRATION_FULL_STEP_RATE,
   calibrationReplyMatches, crc8, encodeCalibration, nextSeq, parseCalibration,
   parseCalibrationReply, parseCameraStatus, parseStatus, SERIAL_BAUD,
   type CalibrationCommand, type CalibrationKey, type CalibrationMutableKey, type CalibrationReply, type StatusMsg,
@@ -296,7 +296,7 @@ class Guide {
     const stepper = await this.get("stepper");
     const microsteps = stepper[1];
     if (!Number.isInteger(microsteps) || microsteps <= 0 || !Number.isFinite(stepper[0]) || stepper[0] <= 0) throw new Error("set plausible motor full steps and microsteps before arming the stepper");
-    console.log("Motor-shaft encoder trial: one explicit jog with NO bench travel cap. Choose a short move with known clearance. No automatic correction/retry. Observe the logical elbow direction (generated positive j2 direction), not just shaft direction.");
+    console.log("Motor-shaft encoder trial: one explicit jog, capped by firmware at the full elbow range. Choose a short move with known clearance. No automatic correction/retry. Observe the logical elbow direction (generated positive j2 direction), not just shaft direction.");
     const amount = await this.number("Signed trial microsteps, nonzero integer [-2147483648,2147483647]", undefined,
       (n) => Number.isInteger(n) && n !== 0 && n >= -2147483648 && n <= 2147483647);
     await this.confirmation("Arm ONLY stepper with unloaded linkage and e-stop ready, then perform exactly that single trial?", "ARM");
@@ -318,7 +318,8 @@ class Guide {
   }
 
   private async waitTarget(target: number, microsteps: number): Promise<Sample> {
-    const deadline = Date.now() + Math.ceil(Math.abs(microsteps) * 1000 / CALIBRATION_STEP_RATE) + 3000;
+    const microstepRate = CALIBRATION_FULL_STEP_RATE * (await this.get("stepper"))[1];
+    const deadline = Date.now() + Math.ceil(Math.abs(microsteps) * 1000 / microstepRate) + 3000;
     let settledAt = 0;
     let settledCounts = 0;
     for (;;) {
@@ -357,7 +358,7 @@ class Guide {
         if (text === "help") {
           console.log("Quick jog: wrist -> type UNLOADED_ESTOP_READY once -> a+/a-/b+ (default 5us) or an explicit amount (a+ 100). Simultaneous sets are atomic: `wrist 1600 1400` moves A and B together, and `pose 1 1600 2 1400` sets any armed channels. base+/base-/grip+/grip- after arm base / arm gripper. wrist enters a FRESH draft, arms only A/B directly (no apply, encoder or motor questionnaire), then shows pulses. To retain a draft, use arm wrist instead. Each entry validates every pulse before writing, then samples; no assumed roll/pitch directions, sweeps or movement retries.");
           console.log("WARNING: arming can jump to configured centers; inspect get pulse INDEX first. Hard PWM windows do not prove mechanical clearance throughout joint combinations; stop before binding. Pins, e-stop and hard windows are read-only board_config.h configuration; reflash to change them.");
-          console.log(`step N: a nonzero signed 32-bit integer relative move at ${CALIBRATION_STEP_RATE} microsteps/s, with NO bench travel cap. The resulting counter must also fit signed 32-bit. Positive/negative follow raw driver direction. Keep linkage unloaded, verify clearance and keep physical e-stop ready.`);
+          console.log(`step N: a nonzero integer relative move at ${CALIBRATION_FULL_STEP_RATE} full steps/s (x microsteps), at most the full elbow range in microsteps (else ERR step_bounds). The resulting counter must also fit signed 32-bit. Positive/negative follow raw driver direction. Keep linkage unloaded, verify clearance and keep physical e-stop ready.`);
           console.log("enter requires unloaded/e-stop acknowledgement; set mutable mappings only while disarmed. Each arm prepares and isolates its selected actuator/pair at center; apply is an optional full-setup diagnostic, never a prerequisite. Step is one guarded bounded jog and waits for its completed counter. status/get do not feed the lease; serialized 50ms keepalive after apply/arm preserves the firmware 200ms lease. disarm/save/exit stop it. export emits read-only hardware as comments/get values and mutable keys as recoverable set lines. save still requires FULL mapping/generated-envelope validation. exit discards UNSAVED draft, not quit. reference needs saved valid config, normal mode and manual marked homes EVERY boot/power loss. Clean normal-mode quit preserves reference; SIGINT/error halts and clears it. USB reopening may reset and require reference again. Never retry an uncertain move; inspect before restart.");
           continue;
         }
