@@ -148,7 +148,7 @@ joint travel, giving ±180° base travel from ±90° servo travel. User measured
 establishing the base mapping 1500 µs − 5.555555 µs/degree × logical j1.
 The implied **11.111 µs per servo degree** already pins the 180° servo variant
 (a 270° unit would be ~7.41), and the user has now bench-tested the full ±180°
-travel at both 500 and 2500 µs ends. See README calibration notes.
+travel at both 500 and 2500 µs ends. See the calibration notes in `firmware/arm-controller/README.md`.
 
 Gripper update (2026-11-07): user reports 970 µs fully closed and 2500 µs
 fully open. Generated j5 −90°/+90° encode closed/open, not actual finger angles.

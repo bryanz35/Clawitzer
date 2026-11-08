@@ -1,6 +1,6 @@
 # Status
 
-Build order from the root `CLAUDE.md`. "Scaffolded" means stubs/first-cut code exist that compile and pass unit tests. **Nothing has run on real hardware yet.**
+Build order from the root `CLAUDE.md`. "Scaffolded" means stubs/first-cut code exist that compile and pass unit tests. **2026-11-08: the full stack has run end to end on real hardware (Quest → phone app → USB → NodeMCU-32S → arm) and works.** Per-row "untested on hardware" notes below predate that run.
 
 | # | milestone | owner | state |
 |---|---|---|---|

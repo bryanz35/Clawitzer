@@ -58,7 +58,7 @@ The app also embeds an HTTP + WebSocket server on :8080: serves the operator pag
 - `EspActuatorIO` supplies 50 Hz LEDC outputs only for the configured scope, scoped TMC2209 UART setup, scoped AS5047P SPI/parity/error checks and bounded GPTimer STEP/DIR pulses. The encoder is on the motor shaft: counts unwrap across revolutions only after manual generated-home alignment; following error or encoder faults disable outputs and clear reference. It does not correct missed steps.
 - `SerialTransport` owns UART0 GPIO1/3 through the onboard USB bridge with bounded nonblocking partial-line writes. UART1 serves the TMC on configured pins. SDK console/log output is disabled to avoid interleaved frames.
 - `app_main` composes these modules, retains calibration replies under TX backpressure, runs the fixed 100 Hz session tick and emits status at 10 Hz. Status reports measured elbow position when referenced; other axes report firmware setpoints. E-stop sense also cancels step pulses in the timer ISR. Long stalls resynchronize rather than burst through missed ticks.
-- PlatformIO selects `framework = espidf`; no Arduino or ESP32Servo dependency. The pinned Nix flake provides an FHS development shell and noninteractive runner; see the root README.
+- PlatformIO selects `framework = espidf`; no Arduino or ESP32Servo dependency. The pinned Nix flake provides an FHS development shell and noninteractive runner; see [`firmware/arm-controller/README.md`](../firmware/arm-controller/README.md).
 
 **hardware/urdf/arm.urdf.** The single source of truth for geometry, limits and home pose (`<arm_mirror home acceleration>`). `npm run gen:arm-config` turns it into the firmware header.
 
